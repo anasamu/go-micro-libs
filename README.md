@@ -15,15 +15,18 @@ import "github.com/anasamu/go-micro-libs"
 | Modul | Deskripsi | Provider |
 |-------|-----------|----------|
 | **AI** | Layanan AI dengan dukungan multiple provider | OpenAI, Anthropic, XAI, DeepSeek, Google |
-| **Auth** | Autentikasi dan otorisasi | JWT, OAuth2, 2FA, RBAC, ABAC, ACL |
+| **API** | Integrasi API pihak ketiga dengan protokol multi | HTTP, GraphQL, gRPC, WebSocket |
+| **Auth** | Autentikasi dan otorisasi | JWT, OAuth2, 2FA, RBAC, ABAC, ACL, Auth0, Keycloak, Okta |
 | **Backup** | Backup dan restore data | GCS, Local, S3 |
 | **Cache** | Sistem cache dengan fallback | Redis, Memcache, Memory |
 | **Chaos** | Chaos engineering | HTTP, Kubernetes, Messaging |
 | **Circuit Breaker** | Circuit breaker pattern | Custom, GoBreaker |
 | **Communication** | Protokol komunikasi | HTTP, gRPC, GraphQL, WebSocket, SSE, QUIC |
 | **Config** | Manajemen konfigurasi | Consul, Env, File, Vault |
-| **Database** | Database abstraksi | PostgreSQL, MySQL, MongoDB, Redis, SQLite, dll |
+| **Database** | Database abstraksi | PostgreSQL, MySQL, MongoDB, Redis, SQLite, Cassandra, CockroachDB, Elasticsearch, InfluxDB, MariaDB |
 | **Discovery** | Service discovery | Consul, etcd, Kubernetes, Static |
+| **Edge** | Edge computing dan deployment | Cloudflare Workers, Fastly, Akamai, WASM |
+| **Email** | Layanan email | SMTP, IMAP, POP3 |
 | **Event** | Event sourcing | Kafka, NATS, PostgreSQL |
 | **FileGen** | Generasi file | CSV, DOCX, Excel, PDF, Custom |
 | **Failover** | Failover management | Consul, Kubernetes |
@@ -34,7 +37,8 @@ import "github.com/anasamu/go-micro-libs"
 | **Payment** | Payment processing | Stripe, PayPal, Midtrans, Xendit |
 | **Rate Limit** | Rate limiting | In-memory, Redis |
 | **Scheduling** | Job scheduling | Cron, Redis |
-| **Storage** | Object storage | S3, GCS, Azure, MinIO |
+| **Storage** | Object storage | S3, GCS, Azure, MinIO, Cloudflare R2 |
+| **ZeroTrust** | Zero Trust security | SPIFFE/SPIRE, Istio, mTLS |
 
 ## 🛠️ Instalasi
 
@@ -276,7 +280,73 @@ func main() {
 }
 ```
 
-### 5. Messaging Library
+### 5. API Library
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    
+    "github.com/anasamu/go-micro-libs"
+    "github.com/anasamu/go-micro-libs/api"
+    "github.com/anasamu/go-micro-libs/api/providers/http"
+    "github.com/anasamu/go-micro-libs/api/types"
+    "github.com/sirupsen/logrus"
+)
+
+func main() {
+    // Buat API Manager
+    logger := logrus.New()
+    apiManager := microservices.NewAPIManager(nil, logger)
+    
+    // Buat HTTP provider
+    httpProvider := http.NewProvider(logger)
+    
+    // Konfigurasi HTTP provider
+    config := map[string]interface{}{
+        "base_url": "https://api.example.com",
+        "timeout":  30,
+    }
+    
+    err := httpProvider.Configure(config)
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Daftarkan provider
+    err = apiManager.RegisterProvider(httpProvider)
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Koneksi ke provider
+    ctx := context.Background()
+    err = apiManager.Connect(ctx, "http")
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    // Buat request
+    request := types.CreateAPIRequest(types.MethodGET, "https://api.example.com/users")
+    request.AddHeader("Accept", "application/json")
+    request.SetAuth(&types.Authentication{
+        Type:  types.AuthTypeBearer,
+        Token: "your-jwt-token",
+    })
+    
+    // Kirim request
+    response, err := apiManager.SendRequest(ctx, "http", request)
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    log.Printf("Response: %d - %v", response.StatusCode, response.Body)
+}
+```
+
+### 6. Messaging Library
 
 ```go
 package main
@@ -339,6 +409,114 @@ func main() {
     }
     
     log.Println("Message published:", response.MessageID)
+}
+```
+
+### 7. Edge Computing Library
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    "time"
+    
+    "github.com/anasamu/go-micro-libs"
+    "github.com/anasamu/go-micro-libs/edge"
+    "github.com/anasamu/go-micro-libs/edge/types"
+    "github.com/sirupsen/logrus"
+)
+
+func main() {
+    // Buat Edge Manager
+    logger := logrus.New()
+    edgeManager := microservices.NewEdgeManager()
+    
+    // Tambahkan Cloudflare provider
+    cloudflareConfig := &types.ProviderConfig{
+        Name:      "cloudflare",
+        APIKey:    "your-cloudflare-api-key",
+        AccountID: "your-account-id",
+    }
+    
+    err := edgeManager.AddProvider(cloudflareConfig)
+    if err != nil {
+        log.Fatal("Failed to add Cloudflare provider:", err)
+    }
+    
+    // Deploy worker
+    deployReq := &types.DeployRequest{
+        Name:    "my-worker",
+        Runtime: "javascript",
+        Code:    []byte("export default { async fetch(request) { return new Response('Hello from edge!'); } }"),
+        Environment: map[string]string{
+            "ENVIRONMENT": "production",
+        },
+        Memory:  128,
+        Timeout: 30 * time.Second,
+        Region:  "global",
+    }
+    
+    ctx := context.Background()
+    resp, err := edgeManager.Deploy(ctx, "cloudflare", deployReq)
+    if err != nil {
+        log.Fatal("Deployment failed:", err)
+    }
+    
+    log.Printf("Deployed worker: %s at %s", resp.Name, resp.URL)
+}
+```
+
+### 8. ZeroTrust Library
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    
+    "github.com/anasamu/go-micro-libs"
+    "github.com/anasamu/go-micro-libs/zerotrust"
+    "github.com/anasamu/go-micro-libs/zerotrust/providers/spiffe"
+    "github.com/anasamu/go-micro-libs/zerotrust/types"
+    "github.com/sirupsen/logrus"
+)
+
+func main() {
+    // Buat ZeroTrust Manager
+    logger := logrus.New()
+    ztManager := microservices.NewZeroTrustManager(nil, logger)
+    
+    // Daftarkan SPIFFE provider
+    spiffeProvider := spiffe.NewSPIFFEProvider("spiffe", logger)
+    spiffeConfig := map[string]interface{}{
+        "server_url":   "spire-server:8081",
+        "trust_domain": "example.org",
+    }
+    spiffeProvider.Configure(spiffeConfig)
+    ztManager.RegisterProvider(spiffeProvider)
+    
+    // Autentikasi service
+    authRequest := &types.ServiceAuthRequest{
+        ServiceID:  "user-service",
+        SPIFFEID:   "spiffe://example.org/service/user-service",
+        TrustDomain: "example.org",
+        Context: map[string]interface{}{
+            "environment": "production",
+        },
+    }
+    
+    ctx := context.Background()
+    response, err := ztManager.AuthenticateService(ctx, "spiffe", authRequest)
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    if response.Success {
+        log.Printf("Service authenticated: %s", response.IdentityID)
+    }
 }
 ```
 
@@ -473,6 +651,20 @@ Jika Anda mengalami masalah atau memiliki pertanyaan:
 4. Hubungi maintainer
 
 ## 🔄 Changelog
+
+### v1.1.0
+- **New Modules**: API, Email, Edge Computing, ZeroTrust
+- **New Providers**: 
+  - Storage: Cloudflare R2
+  - Auth: Auth0, Keycloak, Okta
+  - Database: Cassandra, CockroachDB, Elasticsearch, InfluxDB, MariaDB
+- **Enhanced Features**: 
+  - Improved API integration capabilities
+  - Edge computing support with WASM compilation
+  - Zero Trust security implementation
+  - Email services integration
+- **Documentation**: Updated examples and comprehensive guides
+- **Performance**: Optimized provider implementations
 
 ### v1.0.0
 - Initial release

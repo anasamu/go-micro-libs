@@ -1,0 +1,725 @@
+package r2
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	storageProvider "github.com/anasamu/go-micro-libs/storage"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/sirupsen/logrus"
+)
+
+// Provider implements StorageProvider for Cloudflare R2
+type Provider struct {
+	client *s3.Client
+	config map[string]interface{}
+	logger *logrus.Logger
+}
+
+// NewProvider creates a new R2 storage provider
+func NewProvider(logger *logrus.Logger) *Provider {
+	return &Provider{
+		config: make(map[string]interface{}),
+		logger: logger,
+	}
+}
+
+// GetName returns the provider name
+func (p *Provider) GetName() string {
+	return "r2"
+}
+
+// GetSupportedFeatures returns supported features
+func (p *Provider) GetSupportedFeatures() []storageProvider.StorageFeature {
+	return []storageProvider.StorageFeature{
+		storageProvider.FeaturePresignedURLs,
+		storageProvider.FeaturePublicURLs,
+		storageProvider.FeatureMultipart,
+		storageProvider.FeatureVersioning,
+		storageProvider.FeatureEncryption,
+		storageProvider.FeatureLifecycle,
+		storageProvider.FeatureCORS,
+	}
+}
+
+// GetMaxFileSize returns maximum file size (5TB for R2)
+func (p *Provider) GetMaxFileSize() int64 {
+	return 5 * 1024 * 1024 * 1024 * 1024 // 5TB
+}
+
+// GetAllowedTypes returns allowed content types
+func (p *Provider) GetAllowedTypes() []string {
+	return []string{"*"} // R2 allows all types
+}
+
+// Configure configures the R2 provider
+func (p *Provider) Configure(cfg map[string]interface{}) error {
+	// Get account ID (required for R2)
+	accountID, ok := cfg["account_id"].(string)
+	if !ok || accountID == "" {
+		return fmt.Errorf("r2 account_id is required")
+	}
+
+	// Get access key ID
+	accessKeyID, ok := cfg["access_key_id"].(string)
+	if !ok || accessKeyID == "" {
+		return fmt.Errorf("r2 access_key_id is required")
+	}
+
+	// Get secret access key
+	secretAccessKey, ok := cfg["secret_access_key"].(string)
+	if !ok || secretAccessKey == "" {
+		return fmt.Errorf("r2 secret_access_key is required")
+	}
+
+	// Get custom domain (optional)
+	customDomain, _ := cfg["custom_domain"].(string)
+
+	// Create AWS config for R2
+	awsConfig, err := awsconfig.LoadDefaultConfig(context.TODO(),
+		awsconfig.WithRegion("auto"), // R2 uses "auto" region
+		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(accessKeyID, secretAccessKey, "")),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to load AWS config for R2: %w", err)
+	}
+
+	// Create S3 client with R2 endpoint
+	p.client = s3.NewFromConfig(awsConfig, func(o *s3.Options) {
+		// Set R2 endpoint
+		o.BaseEndpoint = aws.String(fmt.Sprintf("https://%s.r2.cloudflarestorage.com", accountID))
+		o.UsePathStyle = true
+	})
+
+	p.config = cfg
+	p.config["custom_domain"] = customDomain
+
+	p.logger.Info("R2 provider configured successfully")
+	return nil
+}
+
+// IsConfigured checks if the provider is configured
+func (p *Provider) IsConfigured() bool {
+	return p.client != nil
+}
+
+// PutObject uploads an object to R2
+func (p *Provider) PutObject(ctx context.Context, request *storageProvider.PutObjectRequest) (*storageProvider.PutObjectResponse, error) {
+	if !p.IsConfigured() {
+		return nil, fmt.Errorf("r2 provider not configured")
+	}
+
+	// Prepare input
+	input := &s3.PutObjectInput{
+		Bucket:      aws.String(request.Bucket),
+		Key:         aws.String(request.Key),
+		Body:        request.Content,
+		ContentType: aws.String(request.ContentType),
+	}
+
+	// Add metadata
+	if request.Metadata != nil {
+		input.Metadata = request.Metadata
+	}
+
+	// Add ACL
+	if request.ACL != "" {
+		input.ACL = types.ObjectCannedACL(request.ACL)
+	}
+
+	// Add server-side encryption
+	if request.Encryption != nil {
+		input.ServerSideEncryption = types.ServerSideEncryption(request.Encryption.Algorithm)
+		if request.Encryption.KeyID != "" {
+			input.SSEKMSKeyId = aws.String(request.Encryption.KeyID)
+		}
+	}
+
+	// Upload object
+	result, err := p.client.PutObject(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to put object: %w", err)
+	}
+
+	response := &storageProvider.PutObjectResponse{
+		Key:          request.Key,
+		ETag:         strings.Trim(*result.ETag, "\""),
+		Size:         request.Size,
+		LastModified: time.Now(),
+		Metadata:     request.Metadata,
+		ProviderData: map[string]interface{}{
+			"version_id": result.VersionId,
+		},
+	}
+
+	if result.VersionId != nil {
+		response.VersionID = *result.VersionId
+	}
+
+	return response, nil
+}
+
+// GetObject downloads an object from R2
+func (p *Provider) GetObject(ctx context.Context, request *storageProvider.GetObjectRequest) (*storageProvider.GetObjectResponse, error) {
+	if !p.IsConfigured() {
+		return nil, fmt.Errorf("r2 provider not configured")
+	}
+
+	// Prepare input
+	input := &s3.GetObjectInput{
+		Bucket: aws.String(request.Bucket),
+		Key:    aws.String(request.Key),
+	}
+
+	// Add version ID if specified
+	if request.VersionID != "" {
+		input.VersionId = aws.String(request.VersionID)
+	}
+
+	// Add range if specified
+	if request.Range != nil {
+		rangeHeader := fmt.Sprintf("bytes=%d-%d", request.Range.Start, request.Range.End)
+		input.Range = aws.String(rangeHeader)
+	}
+
+	// Get object
+	result, err := p.client.GetObject(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get object: %w", err)
+	}
+
+	response := &storageProvider.GetObjectResponse{
+		Content:      result.Body,
+		Size:         *result.ContentLength,
+		ContentType:  aws.ToString(result.ContentType),
+		ETag:         strings.Trim(aws.ToString(result.ETag), "\""),
+		LastModified: aws.ToTime(result.LastModified),
+		Metadata:     result.Metadata,
+		ProviderData: map[string]interface{}{
+			"version_id": result.VersionId,
+		},
+	}
+
+	return response, nil
+}
+
+// DeleteObject deletes an object from R2
+func (p *Provider) DeleteObject(ctx context.Context, request *storageProvider.DeleteObjectRequest) error {
+	if !p.IsConfigured() {
+		return fmt.Errorf("r2 provider not configured")
+	}
+
+	// Prepare input
+	input := &s3.DeleteObjectInput{
+		Bucket: aws.String(request.Bucket),
+		Key:    aws.String(request.Key),
+	}
+
+	// Add version ID if specified
+	if request.VersionID != "" {
+		input.VersionId = aws.String(request.VersionID)
+	}
+
+	// Delete object
+	_, err := p.client.DeleteObject(ctx, input)
+	if err != nil {
+		return fmt.Errorf("failed to delete object: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteObjects deletes multiple objects from R2
+func (p *Provider) DeleteObjects(ctx context.Context, request *storageProvider.DeleteObjectsRequest) (*storageProvider.DeleteObjectsResponse, error) {
+	if !p.IsConfigured() {
+		return nil, fmt.Errorf("r2 provider not configured")
+	}
+
+	// Prepare objects to delete
+	objects := make([]types.ObjectIdentifier, len(request.Keys))
+	for i, key := range request.Keys {
+		objects[i] = types.ObjectIdentifier{Key: aws.String(key)}
+	}
+
+	// Prepare input
+	input := &s3.DeleteObjectsInput{
+		Bucket: aws.String(request.Bucket),
+		Delete: &types.Delete{
+			Objects: objects,
+			Quiet:   aws.Bool(false),
+		},
+	}
+
+	// Delete objects
+	result, err := p.client.DeleteObjects(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete objects: %w", err)
+	}
+
+	// Prepare response
+	response := &storageProvider.DeleteObjectsResponse{
+		Deleted: make([]storageProvider.DeletedObject, len(result.Deleted)),
+		Errors:  make([]storageProvider.DeleteError, len(result.Errors)),
+	}
+
+	// Process deleted objects
+	for i, deleted := range result.Deleted {
+		response.Deleted[i] = storageProvider.DeletedObject{
+			Key:       aws.ToString(deleted.Key),
+			VersionID: aws.ToString(deleted.VersionId),
+		}
+	}
+
+	// Process errors
+	for i, err := range result.Errors {
+		response.Errors[i] = storageProvider.DeleteError{
+			Key:     aws.ToString(err.Key),
+			Code:    aws.ToString(err.Code),
+			Message: aws.ToString(err.Message),
+		}
+	}
+
+	return response, nil
+}
+
+// ListObjects lists objects in R2
+func (p *Provider) ListObjects(ctx context.Context, request *storageProvider.ListObjectsRequest) (*storageProvider.ListObjectsResponse, error) {
+	if !p.IsConfigured() {
+		return nil, fmt.Errorf("r2 provider not configured")
+	}
+
+	// Prepare input
+	input := &s3.ListObjectsV2Input{
+		Bucket: aws.String(request.Bucket),
+	}
+
+	// Add prefix
+	if request.Prefix != "" {
+		input.Prefix = aws.String(request.Prefix)
+	}
+
+	// Add delimiter
+	if request.Delimiter != "" {
+		input.Delimiter = aws.String(request.Delimiter)
+	}
+
+	// Add max keys
+	if request.MaxKeys > 0 {
+		input.MaxKeys = aws.Int32(int32(request.MaxKeys))
+	}
+
+	// Add continuation token
+	if request.ContinuationToken != "" {
+		input.ContinuationToken = aws.String(request.ContinuationToken)
+	}
+
+	// Add start after
+	if request.StartAfter != "" {
+		input.StartAfter = aws.String(request.StartAfter)
+	}
+
+	// List objects
+	result, err := p.client.ListObjectsV2(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list objects: %w", err)
+	}
+
+	// Prepare response
+	response := &storageProvider.ListObjectsResponse{
+		Objects:        make([]storageProvider.ObjectInfo, len(result.Contents)),
+		CommonPrefixes: make([]string, len(result.CommonPrefixes)),
+		IsTruncated:    aws.ToBool(result.IsTruncated),
+		ProviderData:   make(map[string]interface{}),
+	}
+
+	// Process objects
+	for i, obj := range result.Contents {
+		response.Objects[i] = storageProvider.ObjectInfo{
+			Key:          aws.ToString(obj.Key),
+			Size:         aws.ToInt64(obj.Size),
+			LastModified: aws.ToTime(obj.LastModified),
+			ETag:         strings.Trim(aws.ToString(obj.ETag), "\""),
+			StorageClass: string(obj.StorageClass),
+		}
+	}
+
+	// Process common prefixes
+	for i, prefix := range result.CommonPrefixes {
+		response.CommonPrefixes[i] = aws.ToString(prefix.Prefix)
+	}
+
+	// Add continuation token
+	if result.NextContinuationToken != nil {
+		response.NextContinuationToken = *result.NextContinuationToken
+	}
+
+	return response, nil
+}
+
+// ObjectExists checks if an object exists in R2
+func (p *Provider) ObjectExists(ctx context.Context, request *storageProvider.ObjectExistsRequest) (bool, error) {
+	if !p.IsConfigured() {
+		return false, fmt.Errorf("r2 provider not configured")
+	}
+
+	// Prepare input
+	input := &s3.HeadObjectInput{
+		Bucket: aws.String(request.Bucket),
+		Key:    aws.String(request.Key),
+	}
+
+	// Add version ID if specified
+	if request.VersionID != "" {
+		input.VersionId = aws.String(request.VersionID)
+	}
+
+	// Check if object exists
+	_, err := p.client.HeadObject(ctx, input)
+	if err != nil {
+		// Check if it's a "not found" error
+		if strings.Contains(err.Error(), "NoSuchKey") || strings.Contains(err.Error(), "NotFound") {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check object existence: %w", err)
+	}
+
+	return true, nil
+}
+
+// CopyObject copies an object within R2
+func (p *Provider) CopyObject(ctx context.Context, request *storageProvider.CopyObjectRequest) (*storageProvider.CopyObjectResponse, error) {
+	if !p.IsConfigured() {
+		return nil, fmt.Errorf("r2 provider not configured")
+	}
+
+	// Prepare copy source
+	copySource := fmt.Sprintf("%s/%s", request.SourceBucket, request.SourceKey)
+
+	// Prepare input
+	input := &s3.CopyObjectInput{
+		Bucket:     aws.String(request.DestBucket),
+		Key:        aws.String(request.DestKey),
+		CopySource: aws.String(copySource),
+	}
+
+	// Add metadata
+	if request.Metadata != nil {
+		input.Metadata = request.Metadata
+		input.MetadataDirective = types.MetadataDirectiveReplace
+	}
+
+	// Add ACL
+	if request.ACL != "" {
+		input.ACL = types.ObjectCannedACL(request.ACL)
+	}
+
+	// Copy object
+	result, err := p.client.CopyObject(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to copy object: %w", err)
+	}
+
+	response := &storageProvider.CopyObjectResponse{
+		Key:          request.DestKey,
+		ETag:         strings.Trim(aws.ToString(result.CopyObjectResult.ETag), "\""),
+		LastModified: time.Now(),
+		ProviderData: map[string]interface{}{
+			"version_id": result.VersionId,
+		},
+	}
+
+	return response, nil
+}
+
+// MoveObject moves an object within R2
+func (p *Provider) MoveObject(ctx context.Context, request *storageProvider.MoveObjectRequest) (*storageProvider.MoveObjectResponse, error) {
+	// Move is implemented as copy + delete
+	copyRequest := &storageProvider.CopyObjectRequest{
+		SourceBucket: request.SourceBucket,
+		SourceKey:    request.SourceKey,
+		DestBucket:   request.DestBucket,
+		DestKey:      request.DestKey,
+	}
+
+	copyResponse, err := p.CopyObject(ctx, copyRequest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to copy object for move: %w", err)
+	}
+
+	// Delete source object
+	deleteRequest := &storageProvider.DeleteObjectRequest{
+		Bucket: request.SourceBucket,
+		Key:    request.SourceKey,
+	}
+
+	err = p.DeleteObject(ctx, deleteRequest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete source object after move: %w", err)
+	}
+
+	response := &storageProvider.MoveObjectResponse{
+		Key:          copyResponse.Key,
+		ETag:         copyResponse.ETag,
+		LastModified: copyResponse.LastModified,
+		ProviderData: copyResponse.ProviderData,
+	}
+
+	return response, nil
+}
+
+// GetObjectInfo gets object information from R2
+func (p *Provider) GetObjectInfo(ctx context.Context, request *storageProvider.GetObjectInfoRequest) (*storageProvider.ObjectInfo, error) {
+	if !p.IsConfigured() {
+		return nil, fmt.Errorf("r2 provider not configured")
+	}
+
+	// Prepare input
+	input := &s3.HeadObjectInput{
+		Bucket: aws.String(request.Bucket),
+		Key:    aws.String(request.Key),
+	}
+
+	// Add version ID if specified
+	if request.VersionID != "" {
+		input.VersionId = aws.String(request.VersionID)
+	}
+
+	// Get object info
+	result, err := p.client.HeadObject(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get object info: %w", err)
+	}
+
+	info := &storageProvider.ObjectInfo{
+		Key:          request.Key,
+		Size:         aws.ToInt64(result.ContentLength),
+		LastModified: aws.ToTime(result.LastModified),
+		ETag:         strings.Trim(aws.ToString(result.ETag), "\""),
+		ContentType:  aws.ToString(result.ContentType),
+		Metadata:     result.Metadata,
+		StorageClass: string(result.StorageClass),
+		ProviderData: map[string]interface{}{
+			"version_id": result.VersionId,
+		},
+	}
+
+	if result.VersionId != nil {
+		info.VersionID = *result.VersionId
+	}
+
+	return info, nil
+}
+
+// GeneratePresignedURL generates a presigned URL for R2
+func (p *Provider) GeneratePresignedURL(ctx context.Context, request *storageProvider.PresignedURLRequest) (string, error) {
+	if !p.IsConfigured() {
+		return "", fmt.Errorf("r2 provider not configured")
+	}
+
+	// Create presign client
+	presignClient := s3.NewPresignClient(p.client)
+
+	// Prepare input based on method
+	var input interface{}
+	var presignOptions func(*s3.PresignOptions)
+
+	switch strings.ToUpper(request.Method) {
+	case "GET":
+		getInput := &s3.GetObjectInput{
+			Bucket: aws.String(request.Bucket),
+			Key:    aws.String(request.Key),
+		}
+		input = getInput
+		presignOptions = func(o *s3.PresignOptions) {
+			o.Expires = request.Expires
+		}
+
+	case "PUT":
+		putInput := &s3.PutObjectInput{
+			Bucket: aws.String(request.Bucket),
+			Key:    aws.String(request.Key),
+		}
+		input = putInput
+		presignOptions = func(o *s3.PresignOptions) {
+			o.Expires = request.Expires
+		}
+
+	case "DELETE":
+		deleteInput := &s3.DeleteObjectInput{
+			Bucket: aws.String(request.Bucket),
+			Key:    aws.String(request.Key),
+		}
+		input = deleteInput
+		presignOptions = func(o *s3.PresignOptions) {
+			o.Expires = request.Expires
+		}
+
+	default:
+		return "", fmt.Errorf("unsupported method: %s", request.Method)
+	}
+
+	// Generate presigned URL
+	var presignResult *v4.PresignedHTTPRequest
+	var err error
+
+	switch req := input.(type) {
+	case *s3.GetObjectInput:
+		presignResult, err = presignClient.PresignGetObject(ctx, req, presignOptions)
+	case *s3.PutObjectInput:
+		presignResult, err = presignClient.PresignPutObject(ctx, req, presignOptions)
+	case *s3.DeleteObjectInput:
+		presignResult, err = presignClient.PresignDeleteObject(ctx, req, presignOptions)
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("failed to generate presigned URL: %w", err)
+	}
+
+	return presignResult.URL, nil
+}
+
+// GeneratePublicURL generates a public URL for R2
+func (p *Provider) GeneratePublicURL(ctx context.Context, request *storageProvider.PublicURLRequest) (string, error) {
+	if !p.IsConfigured() {
+		return "", fmt.Errorf("r2 provider not configured")
+	}
+
+	// Check if custom domain is configured
+	if customDomain, ok := p.config["custom_domain"].(string); ok && customDomain != "" {
+		// Use custom domain
+		url := fmt.Sprintf("https://%s/%s", customDomain, request.Key)
+		return url, nil
+	}
+
+	// Get account ID from config
+	accountID, ok := p.config["account_id"].(string)
+	if !ok || accountID == "" {
+		return "", fmt.Errorf("account_id not found in config")
+	}
+
+	// Generate public URL using R2 domain
+	url := fmt.Sprintf("https://%s.r2.dev/%s", request.Bucket, request.Key)
+
+	return url, nil
+}
+
+// CreateBucket creates a bucket in R2
+func (p *Provider) CreateBucket(ctx context.Context, request *storageProvider.CreateBucketRequest) error {
+	if !p.IsConfigured() {
+		return fmt.Errorf("r2 provider not configured")
+	}
+
+	// Prepare input
+	input := &s3.CreateBucketInput{
+		Bucket: aws.String(request.Bucket),
+	}
+
+	// Add ACL if specified
+	if request.ACL != "" {
+		input.ACL = types.BucketCannedACL(request.ACL)
+	}
+
+	// Create bucket
+	_, err := p.client.CreateBucket(ctx, input)
+	if err != nil {
+		return fmt.Errorf("failed to create bucket: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteBucket deletes a bucket from R2
+func (p *Provider) DeleteBucket(ctx context.Context, request *storageProvider.DeleteBucketRequest) error {
+	if !p.IsConfigured() {
+		return fmt.Errorf("r2 provider not configured")
+	}
+
+	// Prepare input
+	input := &s3.DeleteBucketInput{
+		Bucket: aws.String(request.Bucket),
+	}
+
+	// Delete bucket
+	_, err := p.client.DeleteBucket(ctx, input)
+	if err != nil {
+		return fmt.Errorf("failed to delete bucket: %w", err)
+	}
+
+	return nil
+}
+
+// BucketExists checks if a bucket exists in R2
+func (p *Provider) BucketExists(ctx context.Context, request *storageProvider.BucketExistsRequest) (bool, error) {
+	if !p.IsConfigured() {
+		return false, fmt.Errorf("r2 provider not configured")
+	}
+
+	// Prepare input
+	input := &s3.HeadBucketInput{
+		Bucket: aws.String(request.Bucket),
+	}
+
+	// Check if bucket exists
+	_, err := p.client.HeadBucket(ctx, input)
+	if err != nil {
+		// Check if it's a "not found" error
+		if strings.Contains(err.Error(), "NotFound") || strings.Contains(err.Error(), "NoSuchBucket") {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check bucket existence: %w", err)
+	}
+
+	return true, nil
+}
+
+// ListBuckets lists buckets in R2
+func (p *Provider) ListBuckets(ctx context.Context) ([]storageProvider.BucketInfo, error) {
+	if !p.IsConfigured() {
+		return nil, fmt.Errorf("r2 provider not configured")
+	}
+
+	// List buckets
+	result, err := p.client.ListBuckets(ctx, &s3.ListBucketsInput{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list buckets: %w", err)
+	}
+
+	// Prepare response
+	buckets := make([]storageProvider.BucketInfo, len(result.Buckets))
+	for i, bucket := range result.Buckets {
+		buckets[i] = storageProvider.BucketInfo{
+			Name:         aws.ToString(bucket.Name),
+			CreationDate: aws.ToTime(bucket.CreationDate),
+		}
+	}
+
+	return buckets, nil
+}
+
+// HealthCheck performs a health check on R2
+func (p *Provider) HealthCheck(ctx context.Context) error {
+	if !p.IsConfigured() {
+		return fmt.Errorf("r2 provider not configured")
+	}
+
+	// List buckets as a health check
+	_, err := p.client.ListBuckets(ctx, &s3.ListBucketsInput{})
+	if err != nil {
+		return fmt.Errorf("r2 health check failed: %w", err)
+	}
+
+	return nil
+}
+
+// Close closes the R2 provider
+func (p *Provider) Close() error {
+	// S3 client doesn't need explicit closing
+	return nil
+}

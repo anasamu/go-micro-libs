@@ -6,7 +6,7 @@
 //
 //	import "github.com/anasamu/go-micro-libs"
 //
-// Version: v1.0.0
+// Version: v1.1.0
 package microservices
 
 // Re-export main services for unified access
@@ -43,6 +43,9 @@ import (
 
 	// Discovery Services
 	"github.com/anasamu/go-micro-libs/discovery"
+
+	// Edge Computing
+	"github.com/anasamu/go-micro-libs/edge"
 
 	// Email Services
 	"github.com/anasamu/go-micro-libs/email"
@@ -82,6 +85,9 @@ import (
 
 	// Utils
 	"github.com/anasamu/go-micro-libs/utils"
+
+	// ZeroTrust
+	"github.com/anasamu/go-micro-libs/zerotrust"
 )
 
 // AI Services
@@ -116,6 +122,9 @@ type DatabaseManager = database.DatabaseManager
 
 // Discovery Services
 type DiscoveryManager = discovery.DiscoveryManager
+
+// Edge Computing
+type EdgeManager = edge.EdgeManager
 
 // Email Services
 type EmailManager = email.EmailManager
@@ -153,6 +162,9 @@ type SchedulingManager = scheduling.SchedulingManager
 // Storage Services
 type StorageManager = storage.StorageManager
 
+// ZeroTrust
+type ZeroTrustManager = zerotrust.ZeroTrustManager
+
 // Manager Constructor Functions
 var NewAIManager = ai.NewAIManager
 var NewAPIManager = api.NewAPIManager
@@ -165,6 +177,7 @@ var NewCommunicationManager = communication.NewCommunicationManager
 var NewConfigManager = config.NewManager
 var NewDatabaseManager = database.NewDatabaseManager
 var NewDiscoveryManager = discovery.NewDiscoveryManager
+var NewEdgeManager = edge.NewEdgeManager
 var NewEmailManager = email.NewEmailManager
 var NewEventManager = event.NewEventSourcingManager
 var NewFileGenManager = filegen.NewManager
@@ -177,6 +190,7 @@ var NewPaymentManager = payment.NewPaymentManager
 var NewRateLimitManager = ratelimit.NewRateLimitManager
 var NewSchedulingManager = scheduling.NewSchedulingManager
 var NewStorageManager = storage.NewStorageManager
+var NewZeroTrustManager = zerotrust.NewZeroTrustManager
 
 // Configuration Functions (only for services that have them)
 var DefaultAPIManagerConfig = api.DefaultManagerConfig
@@ -185,6 +199,7 @@ var DefaultStorageManagerConfig = storage.DefaultManagerConfig
 var DefaultDatabaseManagerConfig = database.DefaultManagerConfig
 var DefaultEmailManagerConfig = email.DefaultManagerConfig
 var DefaultMessagingManagerConfig = messaging.DefaultManagerConfig
+var DefaultZeroTrustManagerConfig = zerotrust.DefaultManagerConfig
 
 // Utility Functions
 var GenerateUUID = utils.GenerateUUID

@@ -609,11 +609,11 @@ We follow [Semantic Versioning](https://semver.org/):
 
 ```bash
 # Update version
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.1.0
+git push origin v1.1.0
 
 # Create release
-gh release create v1.0.0 --title "v1.0.0" --notes "Release notes"
+gh release create v1.1.0 --title "v1.1.0" --notes "Release notes"
 ```
 
 ## Community Guidelines
