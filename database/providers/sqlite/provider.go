@@ -175,14 +175,21 @@ func (p *Provider) WithTransaction(ctx context.Context, fn func(types.Transactio
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 
+	// Use named return to avoid variable shadowing
 	defer func() {
 		if p := recover(); p != nil {
-			tx.Rollback()
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				fmt.Printf("Failed to rollback transaction after panic: %v\n", rollbackErr)
+			}
 			panic(p)
 		} else if err != nil {
-			tx.Rollback()
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				fmt.Printf("Failed to rollback transaction: %v\n", rollbackErr)
+			}
 		} else {
-			err = tx.Commit()
+			if commitErr := tx.Commit(); commitErr != nil {
+				err = fmt.Errorf("failed to commit transaction: %w", commitErr)
+			}
 		}
 	}()
 

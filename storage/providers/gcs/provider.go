@@ -335,13 +335,15 @@ func (p *Provider) ObjectExists(ctx context.Context, request *storageProvider.Ob
 		obj = obj.Generation(parseGeneration(request.VersionID))
 	}
 
-	// Check if object exists
+	// Check if object exists with proper error handling
 	_, err := obj.Attrs(ctx)
 	if err != nil {
 		if err == storage.ErrObjectNotExist {
 			return false, nil
 		}
-		return false, fmt.Errorf("failed to check object existence: %w", err)
+		// Log error without exposing sensitive details
+		p.logger.WithField("error_type", "object_check").Debug("Failed to check object existence")
+		return false, fmt.Errorf("failed to check object existence")
 	}
 
 	return true, nil

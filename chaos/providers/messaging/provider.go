@@ -121,17 +121,23 @@ func (p *Provider) ListExperiments(ctx context.Context) ([]*types.ExperimentResu
 
 // Cleanup cleans up the messaging provider
 func (p *Provider) Cleanup(ctx context.Context) error {
-	// Stop all running experiments
+	var errors []error
+
+	// Stop all running experiments with proper error handling
 	for experimentID := range p.experiments {
 		if err := p.StopExperiment(ctx, experimentID); err != nil {
-			// Log error but continue cleanup
-			fmt.Printf("Failed to stop experiment %s: %v\n", experimentID, err)
+			errors = append(errors, fmt.Errorf("failed to stop experiment %s: %w", experimentID, err))
 		}
 	}
 
 	// Clear all queues and subscribers
 	p.queues = make(map[string][]*Message)
 	p.subscribers = make(map[string][]MessageHandler)
+
+	// Return combined errors if any
+	if len(errors) > 0 {
+		return fmt.Errorf("errors during cleanup: %v", errors)
+	}
 
 	return nil
 }

@@ -98,6 +98,7 @@ func (cp *ConsulProvider) GetConnectionInfo() *types.ConnectionInfo {
 // Connect establishes connection to Consul
 func (cp *ConsulProvider) Connect(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, cp.config.Timeout)
+	defer cancel() // Always cancel to prevent goroutine leak
 	defer cancel()
 
 	// Test connection by getting the agent info
@@ -122,6 +123,7 @@ func (cp *ConsulProvider) Disconnect(ctx context.Context) error {
 // Ping checks if the connection to Consul is alive
 func (cp *ConsulProvider) Ping(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, cp.config.Timeout)
+	defer cancel() // Always cancel to prevent goroutine leak
 	defer cancel()
 
 	_, err := cp.client.Agent().Self()
@@ -141,6 +143,7 @@ func (cp *ConsulProvider) IsConnected() bool {
 // RegisterService registers a service with Consul
 func (cp *ConsulProvider) RegisterService(ctx context.Context, registration *types.ServiceRegistration) error {
 	ctx, cancel := context.WithTimeout(ctx, cp.config.Timeout)
+	defer cancel() // Always cancel to prevent goroutine leak
 	defer cancel()
 
 	serviceRegistration := &api.AgentServiceRegistration{
@@ -175,6 +178,7 @@ func (cp *ConsulProvider) RegisterService(ctx context.Context, registration *typ
 // DeregisterService deregisters a service from Consul
 func (cp *ConsulProvider) DeregisterService(ctx context.Context, serviceID string) error {
 	ctx, cancel := context.WithTimeout(ctx, cp.config.Timeout)
+	defer cancel() // Always cancel to prevent goroutine leak
 	defer cancel()
 
 	err := cp.client.Agent().ServiceDeregister(serviceID)
@@ -195,6 +199,7 @@ func (cp *ConsulProvider) UpdateService(ctx context.Context, registration *types
 // DiscoverServices discovers services from Consul
 func (cp *ConsulProvider) DiscoverServices(ctx context.Context, query *types.ServiceQuery) ([]*types.Service, error) {
 	ctx, cancel := context.WithTimeout(ctx, cp.config.Timeout)
+	defer cancel() // Always cancel to prevent goroutine leak
 	defer cancel()
 
 	services, _, err := cp.client.Health().Service(query.Name, "", false, &api.QueryOptions{})
@@ -257,6 +262,7 @@ func (cp *ConsulProvider) GetService(ctx context.Context, serviceName string) (*
 // GetServiceInstance gets a specific service instance from Consul
 func (cp *ConsulProvider) GetServiceInstance(ctx context.Context, serviceName, instanceID string) (*types.ServiceInstance, error) {
 	ctx, cancel := context.WithTimeout(ctx, cp.config.Timeout)
+	defer cancel() // Always cancel to prevent goroutine leak
 	defer cancel()
 
 	services, _, err := cp.client.Health().Service(serviceName, "", false, &api.QueryOptions{})
@@ -285,6 +291,7 @@ func (cp *ConsulProvider) GetServiceInstance(ctx context.Context, serviceName, i
 // SetHealth sets the health status of a service in Consul
 func (cp *ConsulProvider) SetHealth(ctx context.Context, serviceID string, health types.HealthStatus) error {
 	ctx, cancel := context.WithTimeout(ctx, cp.config.Timeout)
+	defer cancel() // Always cancel to prevent goroutine leak
 	defer cancel()
 
 	consulHealth := convertToConsulHealth(health)
@@ -299,6 +306,7 @@ func (cp *ConsulProvider) SetHealth(ctx context.Context, serviceID string, healt
 // GetHealth gets the health status of a service from Consul
 func (cp *ConsulProvider) GetHealth(ctx context.Context, serviceID string) (types.HealthStatus, error) {
 	ctx, cancel := context.WithTimeout(ctx, cp.config.Timeout)
+	defer cancel() // Always cancel to prevent goroutine leak
 	defer cancel()
 
 	checks, _, err := cp.client.Health().Checks(serviceID, &api.QueryOptions{})
@@ -386,6 +394,7 @@ func (cp *ConsulProvider) StopWatch(ctx context.Context, watchID string) error {
 // GetStats returns discovery statistics from Consul
 func (cp *ConsulProvider) GetStats(ctx context.Context) (*types.DiscoveryStats, error) {
 	ctx, cancel := context.WithTimeout(ctx, cp.config.Timeout)
+	defer cancel() // Always cancel to prevent goroutine leak
 	defer cancel()
 
 	// Get services count
@@ -419,6 +428,7 @@ func (cp *ConsulProvider) GetStats(ctx context.Context) (*types.DiscoveryStats, 
 // ListServices returns a list of all service names from Consul
 func (cp *ConsulProvider) ListServices(ctx context.Context) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, cp.config.Timeout)
+	defer cancel() // Always cancel to prevent goroutine leak
 	defer cancel()
 
 	services, _, err := cp.client.Catalog().Services(&api.QueryOptions{})

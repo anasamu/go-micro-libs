@@ -291,7 +291,12 @@ func (p *Provider) loadTemplateFile(filePath string) ([]string, error) {
 
 // Close closes the provider and cleans up resources
 func (p *Provider) Close() error {
+	// Clear templates map
 	p.templates = make(map[string][]string)
+
+	// Log cleanup completion
+	fmt.Println("CSV provider resources cleaned up")
+
 	return nil
 }
 

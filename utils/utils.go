@@ -127,16 +127,60 @@ func (vu *ValidationUtils) IsValidUUID(uuidStr string) bool {
 	return err == nil
 }
 
-// IsValidPassword validates a password (minimum 8 characters, at least one letter and one number)
+// IsValidPassword validates a password with strong requirements
 func (vu *ValidationUtils) IsValidPassword(password string) bool {
-	if len(password) < 8 {
+	// Minimum 12 characters for better security
+	if len(password) < 12 {
 		return false
 	}
 
-	hasLetter := regexp.MustCompile(`[a-zA-Z]`).MatchString(password)
-	hasNumber := regexp.MustCompile(`[0-9]`).MatchString(password)
+	// Maximum length to prevent DoS attacks
+	if len(password) > 128 {
+		return false
+	}
 
-	return hasLetter && hasNumber
+	// Check for at least one lowercase letter
+	hasLower := regexp.MustCompile(`[a-z]`).MatchString(password)
+	// Check for at least one uppercase letter
+	hasUpper := regexp.MustCompile(`[A-Z]`).MatchString(password)
+	// Check for at least one number
+	hasNumber := regexp.MustCompile(`[0-9]`).MatchString(password)
+	// Check for at least one special character
+	hasSpecial := regexp.MustCompile(`[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~` + "`" + `]`).MatchString(password)
+
+	// All requirements must be met
+	return hasLower && hasUpper && hasNumber && hasSpecial
+}
+
+// ValidatePasswordWithDetails validates a password and returns detailed error messages
+func (vu *ValidationUtils) ValidatePasswordWithDetails(password string) (bool, []string) {
+	var errors []string
+
+	if len(password) < 12 {
+		errors = append(errors, "Password must be at least 12 characters long")
+	}
+
+	if len(password) > 128 {
+		errors = append(errors, "Password must be no more than 128 characters long")
+	}
+
+	if !regexp.MustCompile(`[a-z]`).MatchString(password) {
+		errors = append(errors, "Password must contain at least one lowercase letter")
+	}
+
+	if !regexp.MustCompile(`[A-Z]`).MatchString(password) {
+		errors = append(errors, "Password must contain at least one uppercase letter")
+	}
+
+	if !regexp.MustCompile(`[0-9]`).MatchString(password) {
+		errors = append(errors, "Password must contain at least one number")
+	}
+
+	if !regexp.MustCompile(`[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?~` + "`" + `]`).MatchString(password) {
+		errors = append(errors, "Password must contain at least one special character")
+	}
+
+	return len(errors) == 0, errors
 }
 
 // CryptoUtils provides cryptographic utility functions

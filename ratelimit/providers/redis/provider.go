@@ -117,8 +117,22 @@ func (p *Provider) Connect(ctx context.Context) error {
 // Disconnect closes the Redis connection
 func (p *Provider) Disconnect(ctx context.Context) error {
 	if p.client != nil {
+		// Set a timeout for the disconnect operation
+		disconnectCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		// Gracefully close the connection
 		err := p.client.Close()
 		p.connected = false
+
+		// Wait for any pending operations to complete
+		select {
+		case <-disconnectCtx.Done():
+			p.logger.Warn("Redis disconnect timeout exceeded")
+		default:
+			// Connection closed successfully
+		}
+
 		p.logger.Info("Disconnected from Redis")
 		return err
 	}

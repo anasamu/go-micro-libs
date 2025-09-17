@@ -2,6 +2,7 @@ package s3
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -379,7 +380,13 @@ func (p *Provider) ObjectExists(ctx context.Context, request *storageProvider.Ob
 	// Check if object exists
 	_, err := p.client.HeadObject(ctx, input)
 	if err != nil {
-		// Check if it's a "not found" error
+		// Check if it's a "not found" error using proper error type checking
+		var notFoundErr *types.NoSuchKey
+		if errors.As(err, &notFoundErr) {
+			return false, nil
+		}
+
+		// Fallback to string checking for compatibility
 		if strings.Contains(err.Error(), "NoSuchKey") || strings.Contains(err.Error(), "NotFound") {
 			return false, nil
 		}

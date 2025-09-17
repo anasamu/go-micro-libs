@@ -13,12 +13,13 @@ import (
 
 // MemoryProvider implements the CacheProvider interface for in-memory caching
 type MemoryProvider struct {
-	store     map[string]*types.CacheItem
-	mu        sync.RWMutex
-	config    *MemoryConfig
-	logger    *logrus.Logger
-	connected bool
-	stats     *types.CacheStats
+	store       map[string]*types.CacheItem
+	mu          sync.RWMutex
+	config      *MemoryConfig
+	logger      *logrus.Logger
+	connected   bool
+	stats       *types.CacheStats
+	stopCleanup chan struct{}
 }
 
 // MemoryConfig holds memory-specific configuration
@@ -41,10 +42,11 @@ func NewMemoryProvider(config *MemoryConfig, logger *logrus.Logger) *MemoryProvi
 	}
 
 	provider := &MemoryProvider{
-		store:     make(map[string]*types.CacheItem),
-		config:    config,
-		logger:    logger,
-		connected: false,
+		store:       make(map[string]*types.CacheItem),
+		config:      config,
+		logger:      logger,
+		connected:   false,
+		stopCleanup: make(chan struct{}),
 		stats: &types.CacheStats{
 			Provider:   "memory",
 			LastUpdate: time.Now(),
@@ -113,6 +115,15 @@ func (m *MemoryProvider) Disconnect(ctx context.Context) error {
 	defer m.mu.Unlock()
 
 	m.connected = false
+
+	// Stop cleanup goroutine
+	select {
+	case m.stopCleanup <- struct{}{}:
+		// Successfully sent stop signal
+	case <-time.After(5 * time.Second):
+		m.logger.Warn("Timeout waiting for cleanup goroutine to stop")
+	}
+
 	m.store = make(map[string]*types.CacheItem)
 	m.logger.Info("Disconnected from memory cache")
 	return nil
@@ -557,8 +568,14 @@ func (m *MemoryProvider) startCleanup() {
 	ticker := time.NewTicker(m.config.CleanupInterval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		m.cleanupExpired()
+	for {
+		select {
+		case <-ticker.C:
+			m.cleanupExpired()
+		case <-m.stopCleanup:
+			m.logger.Debug("Memory cache cleanup goroutine stopped")
+			return
+		}
 	}
 }
 

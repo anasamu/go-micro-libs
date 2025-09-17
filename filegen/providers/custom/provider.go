@@ -397,7 +397,12 @@ func (p *Provider) loadTemplates() error {
 
 // Close closes the provider and cleans up resources
 func (p *Provider) Close() error {
+	// Clear templates map
 	p.templates = make(map[string]*template.Template)
+
+	// Log cleanup completion
+	fmt.Println("Custom provider resources cleaned up")
+
 	return nil
 }
 

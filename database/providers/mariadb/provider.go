@@ -64,7 +64,7 @@ func (p *Provider) Connect(ctx context.Context) error {
 		return fmt.Errorf("failed to open MariaDB connection: %w", err)
 	}
 
-	// Configure connection pool
+	// Configure connection pool with proper settings
 	if maxConns, ok := p.config["max_connections"].(int); ok {
 		db.SetMaxOpenConns(maxConns)
 	}
@@ -73,9 +73,13 @@ func (p *Provider) Connect(ctx context.Context) error {
 	}
 	if maxLifetime, ok := p.config["max_connection_lifetime"].(time.Duration); ok {
 		db.SetConnMaxLifetime(maxLifetime)
+	} else {
+		db.SetConnMaxLifetime(30 * time.Minute) // Default shorter lifetime
 	}
 	if maxIdleTime, ok := p.config["max_connection_idle_time"].(time.Duration); ok {
 		db.SetConnMaxIdleTime(maxIdleTime)
+	} else {
+		db.SetConnMaxIdleTime(5 * time.Minute) // Default idle timeout
 	}
 
 	// Test connection
@@ -92,6 +96,21 @@ func (p *Provider) Connect(ctx context.Context) error {
 // Disconnect closes the connection to MariaDB
 func (p *Provider) Disconnect(ctx context.Context) error {
 	if p.db != nil {
+		// Set a timeout for the disconnect operation
+		disconnectCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+
+		// Close all idle connections first
+		p.db.SetMaxIdleConns(0)
+
+		// Wait a moment for connections to close
+		select {
+		case <-disconnectCtx.Done():
+			p.logger.Warn("MariaDB disconnect timeout exceeded")
+		case <-time.After(2 * time.Second):
+			// Continue with close
+		}
+
 		if err := p.db.Close(); err != nil {
 			return fmt.Errorf("failed to close MariaDB connection: %w", err)
 		}

@@ -456,11 +456,26 @@ func (p *Provider) loadTemplates() error {
 
 // Close closes the provider and cleans up resources
 func (p *Provider) Close() error {
-	// Close all template files
-	for _, file := range p.templates {
-		file.Close()
+	var errors []error
+
+	// Close all template files with proper error handling
+	for name, file := range p.templates {
+		if err := file.Close(); err != nil {
+			errors = append(errors, fmt.Errorf("failed to close template %s: %w", name, err))
+		}
 	}
+
+	// Clear templates map
 	p.templates = make(map[string]*excelize.File)
+
+	// Log cleanup completion
+	fmt.Println("Excel provider resources cleaned up")
+
+	// Return combined errors if any
+	if len(errors) > 0 {
+		return fmt.Errorf("errors during cleanup: %v", errors)
+	}
+
 	return nil
 }
 

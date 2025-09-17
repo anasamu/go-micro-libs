@@ -1,37 +1,32 @@
 # API Library
 
-The API library provides a unified interface for handling third-party API integrations with dynamic headers, requests, and support for multiple protocols including HTTP, GraphQL, and gRPC.
+The API library provides a unified interface for making HTTP requests, GraphQL queries, gRPC calls, and WebSocket connections across multiple providers. It offers comprehensive API management with built-in retry logic, authentication, validation, and monitoring capabilities.
 
 ## Features
 
-- **Multi-Protocol Support**: HTTP/HTTPS, GraphQL, gRPC
-- **Dynamic Headers**: Add custom headers to any request
-- **Flexible Authentication**: Basic, Bearer, API Key, OAuth2, JWT, and custom authentication
-- **Request Types**: GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS
-- **Content Types**: JSON, XML, Form data, Multipart, Binary
-- **Batch Operations**: Send multiple requests in parallel
-- **Streaming Support**: Stream large responses
-- **Retry Logic**: Built-in retry mechanisms with configurable delays
-- **Connection Management**: Automatic connection handling with health checks
-- **Error Handling**: Comprehensive error handling and logging
+- **Multi-Protocol Support**: HTTP, GraphQL, gRPC, and WebSocket
+- **Provider Management**: Support for multiple API backends
+- **Authentication**: Built-in support for various auth methods
+- **Retry Logic**: Configurable retry mechanisms with exponential backoff
+- **Request Validation**: Automatic request validation and sanitization
+- **Batch Operations**: Support for batch requests and responses
+- **Streaming**: Real-time streaming for HTTP and WebSocket
 - **Monitoring**: Built-in statistics and health monitoring
+- **Circuit Breaker**: Automatic circuit breaker patterns
+- **Rate Limiting**: Built-in rate limiting capabilities
 
-## Supported API Features
+## Supported Providers
 
-- HTTP/HTTPS requests
-- GraphQL queries and mutations
-- gRPC service calls
-- WebSocket connections (planned)
-- Authentication (Basic, Bearer, API Key, OAuth2, JWT, Custom)
-- Rate limiting
-- Retry mechanisms
-- Circuit breaker patterns
-- Request/response transformation
-- Pagination support
-- Batch processing
-- Streaming responses
-- File uploads
-- Form data submission
+- **HTTP**: Standard HTTP client with advanced features
+- **GraphQL**: GraphQL client with query optimization
+- **gRPC**: gRPC client with connection pooling
+- **WebSocket**: WebSocket client with reconnection logic
+
+## Installation
+
+```bash
+go get github.com/anasamu/go-micro-libs/api
+```
 
 ## Quick Start
 
@@ -40,449 +35,393 @@ package main
 
 import (
     "context"
+    "fmt"
     "log"
+    "time"
 
     "github.com/anasamu/go-micro-libs/api"
-    "github.com/anasamu/go-micro-libs/api/providers/http"
     "github.com/anasamu/go-micro-libs/api/types"
     "github.com/sirupsen/logrus"
 )
 
 func main() {
-    // Create API manager
-    apiManager := api.NewAPIManager(nil, logrus.New())
+    // Create logger
+    logger := logrus.New()
 
-    // Register HTTP provider
-    httpProvider := http.NewProvider(logrus.New())
-    httpConfig := map[string]interface{}{
-        "base_url": "https://api.example.com",
-        "timeout":  30,
-    }
-    httpProvider.Configure(httpConfig)
-    apiManager.RegisterProvider(httpProvider)
+    // Create API manager with default config
+    config := api.DefaultManagerConfig()
+    manager := api.NewAPIManager(config, logger)
 
-    // Connect
+    // Register HTTP provider (example)
+    // httpProvider := http.NewHTTPProvider()
+    // manager.RegisterProvider(httpProvider)
+
+    // Create HTTP request
     ctx := context.Background()
-    if err := apiManager.Connect(ctx, "http"); err != nil {
-        log.Fatal(err)
-    }
+    request := types.CreateAPIRequest(types.MethodGET, "https://api.example.com/users")
+    request.AddHeader("Content-Type", "application/json")
+    request.SetTimeout(30 * time.Second)
 
     // Send request
-    request := types.CreateAPIRequest(types.MethodGET, "https://api.example.com/users")
-    request.AddHeader("Accept", "application/json")
-    
-    response, err := apiManager.SendRequest(ctx, "http", request)
+    response, err := manager.SendRequest(ctx, "http", request)
     if err != nil {
         log.Fatal(err)
     }
 
-    log.Printf("Response: %d - %v", response.StatusCode, response.Body)
+    fmt.Printf("Status: %d\n", response.StatusCode)
+    fmt.Printf("Body: %v\n", response.Body)
 }
 ```
 
-## Configuration
+## API Reference
 
-### HTTP Provider Configuration
+### APIManager
+
+The main manager for handling API operations across multiple providers.
+
+#### Methods
+
+##### `NewAPIManager(config *ManagerConfig, logger *logrus.Logger) *APIManager`
+Creates a new API manager with the given configuration and logger.
+
+##### `RegisterProvider(provider APIProvider) error`
+Registers a new API provider.
+
+**Parameters:**
+- `provider`: The API provider to register
+
+**Returns:**
+- `error`: Any error that occurred during registration
+
+##### `GetProvider(name string) (APIProvider, error)`
+Retrieves a specific provider by name.
+
+##### `GetDefaultProvider() (APIProvider, error)`
+Returns the default API provider.
+
+##### `Connect(ctx context.Context, providerName string) error`
+Connects to an API system using the specified provider.
+
+##### `Disconnect(ctx context.Context, providerName string) error`
+Disconnects from an API system using the specified provider.
+
+##### `Ping(ctx context.Context, providerName string) error`
+Pings an API system to check connectivity.
+
+##### `SendRequest(ctx context.Context, providerName string, request *types.APIRequest) (*types.APIResponse, error)`
+Sends an HTTP request using the specified provider.
+
+**Parameters:**
+- `ctx`: Context for cancellation and timeouts
+- `providerName`: Name of the provider to use
+- `request`: HTTP request with method, URL, headers, and body
+
+**Returns:**
+- `*types.APIResponse`: HTTP response with status, headers, and body
+- `error`: Any error that occurred
+
+##### `SendBatch(ctx context.Context, providerName string, request *types.BatchRequest) (*types.BatchResponse, error)`
+Sends multiple HTTP requests in a batch.
+
+##### `SendGraphQLRequest(ctx context.Context, providerName string, request *types.GraphQLRequest) (*types.GraphQLResponse, error)`
+Sends a GraphQL request using the specified provider.
+
+##### `SendgRPCRequest(ctx context.Context, providerName string, request *types.GRPCRequest) (*types.GRPCResponse, error)`
+Sends a gRPC request using the specified provider.
+
+##### `ConnectWebSocket(ctx context.Context, providerName string, request *types.WebSocketRequest) (*types.WebSocketResponse, error)`
+Connects to a WebSocket using the specified provider.
+
+##### `SendWebSocketMessage(ctx context.Context, providerName string, request *types.WebSocketRequest, message interface{}) (*types.WebSocketResponse, error)`
+Sends a message through WebSocket.
+
+##### `CloseWebSocket(ctx context.Context, providerName string, request *types.WebSocketRequest) error`
+Closes a WebSocket connection.
+
+##### `StreamRequest(ctx context.Context, providerName string, request *types.APIRequest, handler types.APIHandler) error`
+Streams an API request with real-time response handling.
+
+##### `WebSocketStream(ctx context.Context, providerName string, request *types.WebSocketRequest, handler types.WebSocketHandler) error`
+Streams WebSocket messages with real-time handling.
+
+##### `HealthCheck(ctx context.Context) map[string]error`
+Performs health check on all providers.
+
+##### `GetStats(ctx context.Context, providerName string) (*types.APIStats, error)`
+Gets statistics from a specific provider.
+
+##### `GetSupportedProviders() []string`
+Returns a list of registered providers.
+
+##### `GetProviderCapabilities(providerName string) ([]types.APIFeature, *types.ConnectionInfo, error)`
+Returns capabilities of a specific provider.
+
+##### `Close() error`
+Closes all API connections.
+
+### Types
+
+#### ManagerConfig
+Configuration for the API manager.
 
 ```go
-httpConfig := map[string]interface{}{
-    "base_url":        "https://api.example.com",    // Base URL for all requests
-    "timeout":         30,                           // Request timeout in seconds
-    "max_retries":     3,                            // Maximum retry attempts
-    "retry_delay":     1,                            // Delay between retries in seconds
-    "proxy_url":       "http://proxy:8080",          // Optional proxy URL
-    "skip_tls_verify": false,                        // Skip TLS verification
+type ManagerConfig struct {
+    DefaultProvider string            `json:"default_provider"`
+    RetryAttempts   int               `json:"retry_attempts"`
+    RetryDelay      time.Duration     `json:"retry_delay"`
+    Timeout         time.Duration     `json:"timeout"`
+    MaxRequestSize  int64             `json:"max_request_size"`
+    Metadata        map[string]string `json:"metadata"`
 }
 ```
 
-### GraphQL Provider Configuration
+#### APIRequest
+Represents an HTTP request.
 
 ```go
-graphqlConfig := map[string]interface{}{
-    "endpoint":    "https://api.example.com/graphql", // GraphQL endpoint
-    "timeout":     30,                                // Request timeout in seconds
-    "max_retries": 3,                                 // Maximum retry attempts
-    "retry_delay": 1,                                 // Delay between retries in seconds
+type APIRequest struct {
+    ID          uuid.UUID              `json:"id"`
+    Method      HTTPMethod             `json:"method"`
+    URL         string                 `json:"url"`
+    Headers     []Header               `json:"headers,omitempty"`
+    QueryParams []QueryParam           `json:"query_params,omitempty"`
+    Body        interface{}            `json:"body,omitempty"`
+    FormData    []FormData             `json:"form_data,omitempty"`
+    Files       []FileUpload           `json:"files,omitempty"`
+    Auth        *Authentication        `json:"auth,omitempty"`
+    Timeout     time.Duration          `json:"timeout,omitempty"`
+    Retries     int                    `json:"retries,omitempty"`
+    Metadata    map[string]interface{} `json:"metadata,omitempty"`
+    CreatedAt   time.Time              `json:"created_at"`
 }
 ```
 
-### gRPC Provider Configuration
+#### APIResponse
+Represents an HTTP response.
 
 ```go
-grpcConfig := map[string]interface{}{
-    "address":     "localhost:50051", // gRPC server address
-    "use_tls":     false,             // Use TLS encryption
-    "timeout":     30,                // Request timeout in seconds
-    "max_retries": 3,                 // Maximum retry attempts
-    "retry_delay": 1,                 // Delay between retries in seconds
+type APIResponse struct {
+    ID          uuid.UUID              `json:"id"`
+    RequestID   uuid.UUID              `json:"request_id"`
+    StatusCode  int                    `json:"status_code"`
+    Headers     []Header               `json:"headers,omitempty"`
+    Body        interface{}            `json:"body,omitempty"`
+    RawBody     []byte                 `json:"raw_body,omitempty"`
+    ContentType string                 `json:"content_type,omitempty"`
+    Size        int64                  `json:"size"`
+    Duration    time.Duration          `json:"duration"`
+    Success     bool                   `json:"success"`
+    Error       string                 `json:"error,omitempty"`
+    Metadata    map[string]interface{} `json:"metadata,omitempty"`
+    CreatedAt   time.Time              `json:"created_at"`
 }
 ```
 
-## Usage Examples
-
-### HTTP Requests
-
-#### GET Request
+#### GraphQLRequest
+Represents a GraphQL request.
 
 ```go
-// Create GET request
-request := types.CreateAPIRequest(types.MethodGET, "https://api.example.com/users")
-request.AddHeader("Accept", "application/json")
-request.AddQueryParam("limit", "10")
-request.AddQueryParam("offset", "0")
+type GraphQLRequest struct {
+    ID        uuid.UUID              `json:"id"`
+    Query     string                 `json:"query"`
+    Variables map[string]interface{} `json:"variables,omitempty"`
+    Operation string                 `json:"operation,omitempty"`
+    Headers   []Header               `json:"headers,omitempty"`
+    Auth      *Authentication        `json:"auth,omitempty"`
+    Timeout   time.Duration          `json:"timeout,omitempty"`
+    Metadata  map[string]interface{} `json:"metadata,omitempty"`
+    CreatedAt time.Time              `json:"created_at"`
+}
+```
 
-// Add authentication
-auth := &types.Authentication{
+#### GRPCRequest
+Represents a gRPC request.
+
+```go
+type GRPCRequest struct {
+    ID        uuid.UUID              `json:"id"`
+    Service   string                 `json:"service"`
+    Method    string                 `json:"method"`
+    Data      interface{}            `json:"data,omitempty"`
+    Metadata  map[string]string      `json:"metadata,omitempty"`
+    Timeout   time.Duration          `json:"timeout,omitempty"`
+    Options   map[string]interface{} `json:"options,omitempty"`
+    CreatedAt time.Time              `json:"created_at"`
+}
+```
+
+#### WebSocketRequest
+Represents a WebSocket request.
+
+```go
+type WebSocketRequest struct {
+    ID        uuid.UUID              `json:"id"`
+    URL       string                 `json:"url"`
+    Headers   []Header               `json:"headers,omitempty"`
+    Auth      *Authentication        `json:"auth,omitempty"`
+    Protocols []string               `json:"protocols,omitempty"`
+    Timeout   time.Duration          `json:"timeout,omitempty"`
+    Metadata  map[string]interface{} `json:"metadata,omitempty"`
+    CreatedAt time.Time              `json:"created_at"`
+}
+```
+
+#### Authentication
+Authentication configuration.
+
+```go
+type Authentication struct {
+    Type         AuthType               `json:"type"`
+    Username     string                 `json:"username,omitempty"`
+    Password     string                 `json:"password,omitempty"`
+    Token        string                 `json:"token,omitempty"`
+    APIKey       string                 `json:"api_key,omitempty"`
+    APIKeyHeader string                 `json:"api_key_header,omitempty"`
+    APIKeyQuery  string                 `json:"api_key_query,omitempty"`
+    OAuth2       *OAuth2Config          `json:"oauth2,omitempty"`
+    JWT          *JWTConfig             `json:"jwt,omitempty"`
+    Custom       map[string]interface{} `json:"custom,omitempty"`
+}
+```
+
+## Advanced Usage
+
+### HTTP Requests with Authentication
+
+```go
+// Create request with Bearer token
+request := types.CreateAPIRequest(types.MethodGET, "https://api.example.com/protected")
+request.SetAuth(&types.Authentication{
     Type:  types.AuthTypeBearer,
-    Token: "your-jwt-token",
-}
-request.SetAuth(auth)
-
-// Send request
-response, err := apiManager.SendRequest(ctx, "http", request)
-```
-
-#### POST Request with JSON Body
-
-```go
-// Create POST request
-request := types.CreateAPIRequest(types.MethodPOST, "https://api.example.com/users")
-request.AddHeader("Content-Type", "application/json")
-request.Body = map[string]interface{}{
-    "name":  "John Doe",
-    "email": "john@example.com",
-}
-
-response, err := apiManager.SendRequest(ctx, "http", request)
-```
-
-#### POST Request with Form Data
-
-```go
-// Create POST request with form data
-request := types.CreateAPIRequest(types.MethodPOST, "https://api.example.com/upload")
-request.AddFormData("name", "John Doe")
-request.AddFormData("email", "john@example.com")
-request.AddFile("avatar", "avatar.jpg", "image/jpeg", imageData)
-
-response, err := apiManager.SendRequest(ctx, "http", request)
-```
-
-#### PUT/PATCH Request
-
-```go
-// Create PUT request
-request := types.CreateAPIRequest(types.MethodPUT, "https://api.example.com/users/123")
-request.AddHeader("Content-Type", "application/json")
-request.Body = map[string]interface{}{
-    "name":  "John Updated",
-    "email": "john.updated@example.com",
-}
-
-response, err := apiManager.SendRequest(ctx, "http", request)
-```
-
-#### DELETE Request
-
-```go
-// Create DELETE request
-request := types.CreateAPIRequest(types.MethodDELETE, "https://api.example.com/users/123")
-
-response, err := apiManager.SendRequest(ctx, "http", request)
-```
-
-### Authentication
-
-#### Bearer Token Authentication
-
-```go
-auth := &types.Authentication{
-    Type:  types.AuthTypeBearer,
-    Token: "your-jwt-token",
-}
-request.SetAuth(auth)
-```
-
-#### Basic Authentication
-
-```go
-auth := &types.Authentication{
-    Type:     types.AuthTypeBasic,
-    Username: "username",
-    Password: "password",
-}
-request.SetAuth(auth)
-```
-
-#### API Key Authentication
-
-```go
-auth := &types.Authentication{
-    Type:         types.AuthTypeAPIKey,
-    APIKey:       "your-api-key",
-    APIKeyHeader: "X-API-Key", // or APIKeyQuery for query parameter
-}
-request.SetAuth(auth)
-```
-
-#### OAuth2 Authentication
-
-```go
-auth := &types.Authentication{
-    Type: types.AuthTypeOAuth2,
-    OAuth2: &types.OAuth2Config{
-        ClientID:     "your-client-id",
-        ClientSecret: "your-client-secret",
-        TokenURL:     "https://oauth.example.com/token",
-        Scopes:       []string{"read", "write"},
-    },
-}
-request.SetAuth(auth)
-```
-
-#### Custom Authentication
-
-```go
-auth := &types.Authentication{
-    Type: types.AuthTypeCustom,
-    Custom: map[string]interface{}{
-        "headers": map[string]string{
-            "X-Custom-Header": "custom-value",
-            "Authorization":   "Custom your-token",
-        },
-    },
-}
-request.SetAuth(auth)
-```
-
-### GraphQL Requests
-
-#### GraphQL Query
-
-```go
-query := `
-    query GetUsers($limit: Int!, $offset: Int!) {
-        users(limit: $limit, offset: $offset) {
-            id
-            name
-            email
-        }
-    }
-`
-
-request := types.CreateGraphQLRequest(query)
-request.AddVariable("limit", 10)
-request.AddVariable("offset", 0)
-request.SetAuth(auth)
-
-response, err := apiManager.SendGraphQLRequest(ctx, "graphql", request)
-```
-
-#### GraphQL Mutation
-
-```go
-mutation := `
-    mutation CreateUser($input: UserInput!) {
-        createUser(input: $input) {
-            id
-            name
-            email
-        }
-    }
-`
-
-request := types.CreateGraphQLRequest(mutation)
-request.AddVariable("input", map[string]interface{}{
-    "name":  "Jane Doe",
-    "email": "jane@example.com",
+    Token: "your-bearer-token",
 })
 
-response, err := apiManager.SendGraphQLRequest(ctx, "graphql", request)
+response, err := manager.SendRequest(ctx, "http", request)
 ```
 
-### gRPC Requests
+### GraphQL Queries
 
 ```go
-request := types.CreategRPCRequest("UserService", "GetUser")
-request.Data = map[string]interface{}{
+// Create GraphQL request
+gqlRequest := types.CreateGraphQLRequest(`
+    query GetUser($id: ID!) {
+        user(id: $id) {
+            id
+            name
+            email
+        }
+    }
+`)
+gqlRequest.AddVariable("id", "123")
+gqlRequest.SetAuth(&types.Authentication{
+    Type:  types.AuthTypeBearer,
+    Token: "your-token",
+})
+
+response, err := manager.SendGraphQLRequest(ctx, "graphql", gqlRequest)
+```
+
+### gRPC Calls
+
+```go
+// Create gRPC request
+grpcRequest := types.CreateGRPCRequest("UserService", "GetUser")
+grpcRequest.Data = map[string]interface{}{
     "id": "123",
 }
-request.AddMetadata("authorization", "Bearer your-jwt-token")
+grpcRequest.AddMetadata("authorization", "Bearer your-token")
 
-response, err := apiManager.SendgRPCRequest(ctx, "grpc", request)
+response, err := manager.SendgRPCRequest(ctx, "grpc", grpcRequest)
 ```
 
-### Batch Requests
+### WebSocket Connections
 
 ```go
-batchRequest := &types.BatchRequest{
-    Requests: []types.APIRequest{
-        *getRequest,
-        *postRequest,
-        *putRequest,
-    },
+// Create WebSocket request
+wsRequest := types.CreateWebSocketRequest("wss://api.example.com/ws")
+wsRequest.SetAuth(&types.Authentication{
+    Type:  types.AuthTypeBearer,
+    Token: "your-token",
+})
+
+// Connect
+response, err := manager.ConnectWebSocket(ctx, "websocket", wsRequest)
+if err != nil {
+    log.Fatal(err)
 }
 
-response, err := apiManager.SendBatch(ctx, "http", batchRequest)
+// Send message
+message := map[string]interface{}{
+    "type": "ping",
+    "data": "hello",
+}
+response, err = manager.SendWebSocketMessage(ctx, "websocket", wsRequest, message)
 ```
 
 ### Streaming Requests
 
 ```go
+// Stream HTTP response
 handler := func(response *types.APIResponse) error {
-    log.Printf("Received chunk: %s", string(response.RawBody))
+    fmt.Printf("Received chunk: %v\n", response.Body)
     return nil
 }
 
-err := apiManager.StreamRequest(ctx, "http", request, handler)
+err := manager.StreamRequest(ctx, "http", request, handler)
 ```
 
-### Custom Headers
+### Batch Requests
 
 ```go
-request := types.CreateAPIRequest(types.MethodGET, "https://api.example.com/data")
-request.AddHeader("Accept", "application/json")
-request.AddHeader("User-Agent", "MyApp/1.0")
-request.AddHeader("X-Custom-Header", "custom-value")
-request.AddHeader("Authorization", "Bearer your-token")
+// Create batch request
+batchRequest := &types.BatchRequest{
+    ID: uuid.New(),
+    Requests: []types.APIRequest{
+        *types.CreateAPIRequest(types.MethodGET, "https://api.example.com/users"),
+        *types.CreateAPIRequest(types.MethodGET, "https://api.example.com/posts"),
+    },
+    CreatedAt: time.Now(),
+}
+
+response, err := manager.SendBatch(ctx, "http", batchRequest)
 ```
 
-### Query Parameters
+### Health Monitoring
 
 ```go
-request := types.CreateAPIRequest(types.MethodGET, "https://api.example.com/search")
-request.AddQueryParam("q", "search term")
-request.AddQueryParam("limit", "20")
-request.AddQueryParam("offset", "0")
-request.AddQueryParam("sort", "created_at")
-request.AddQueryParam("order", "desc")
+// Check health of all providers
+healthStatus := manager.HealthCheck(ctx)
+for provider, err := range healthStatus {
+    if err != nil {
+        fmt.Printf("Provider %s is unhealthy: %v\n", provider, err)
+    } else {
+        fmt.Printf("Provider %s is healthy\n", provider)
+    }
+}
+
+// Get statistics
+stats, err := manager.GetStats(ctx, "http")
+if err == nil {
+    fmt.Printf("Total requests: %d\n", stats.TotalRequests)
+    fmt.Printf("Success rate: %.2f%%\n", float64(stats.SuccessfulRequests)/float64(stats.TotalRequests)*100)
+}
 ```
 
-### Request Timeout and Retries
+## Error Handling
+
+The library provides comprehensive error handling:
 
 ```go
-request := types.CreateAPIRequest(types.MethodGET, "https://api.example.com/slow-endpoint")
-request.SetTimeout(60 * time.Second)  // 60 second timeout
-request.SetRetries(5)                 // Retry up to 5 times
-```
-
-### File Upload
-
-```go
-request := types.CreateAPIRequest(types.MethodPOST, "https://api.example.com/upload")
-request.AddFile("document", "report.pdf", "application/pdf", pdfData)
-request.AddFile("image", "photo.jpg", "image/jpeg", imageData)
-request.AddFormData("title", "Monthly Report")
-request.AddFormData("description", "Q1 2024 report")
-```
-
-### Response Handling
-
-```go
-response, err := apiManager.SendRequest(ctx, "http", request)
+response, err := manager.SendRequest(ctx, "http", request)
 if err != nil {
+    // Handle connection errors, timeouts, etc.
     log.Printf("Request failed: %v", err)
     return
 }
 
-// Check response status
-if response.Success {
-    log.Printf("Request successful: %d", response.StatusCode)
-    
-    // Handle JSON response
-    if data, ok := response.Body.(map[string]interface{}); ok {
-        log.Printf("Response data: %v", data)
-    }
-    
-    // Handle string response
-    if data, ok := response.Body.(string); ok {
-        log.Printf("Response text: %s", data)
-    }
-} else {
-    log.Printf("Request failed: %s", response.Error)
-}
-
-// Access response headers
-for _, header := range response.Headers {
-    log.Printf("Header: %s = %s", header.Name, header.Value)
-}
-
-// Access raw response body
-log.Printf("Raw response: %s", string(response.RawBody))
-```
-
-## Advanced Features
-
-### Health Checks
-
-```go
-// Check health of all providers
-healthResults := apiManager.HealthCheck(ctx)
-for provider, err := range healthResults {
-    if err != nil {
-        log.Printf("Provider %s is unhealthy: %v", provider, err)
-    } else {
-        log.Printf("Provider %s is healthy", provider)
-    }
-}
-
-// Check if specific provider is connected
-if apiManager.IsProviderConnected("http") {
-    log.Println("HTTP provider is connected")
-}
-```
-
-### Statistics
-
-```go
-// Get statistics from a provider
-stats, err := apiManager.GetStats(ctx, "http")
-if err != nil {
-    log.Printf("Failed to get stats: %v", err)
-} else {
-    log.Printf("Total requests: %d", stats.TotalRequests)
-    log.Printf("Successful requests: %d", stats.SuccessfulRequests)
-    log.Printf("Failed requests: %d", stats.FailedRequests)
-    log.Printf("Average response time: %v", stats.AverageResponseTime)
-    log.Printf("Active connections: %d", stats.ActiveConnections)
-}
-```
-
-### Provider Capabilities
-
-```go
-// Get provider capabilities
-features, connInfo, err := apiManager.GetProviderCapabilities("http")
-if err != nil {
-    log.Printf("Failed to get capabilities: %v", err)
-} else {
-    log.Printf("Supported features: %v", features)
-    log.Printf("Connection info: %+v", connInfo)
-}
-```
-
-### Error Handling
-
-```go
-response, err := apiManager.SendRequest(ctx, "http", request)
-if err != nil {
-    // Handle different types of errors
-    switch {
-    case strings.Contains(err.Error(), "timeout"):
-        log.Println("Request timed out")
-    case strings.Contains(err.Error(), "connection refused"):
-        log.Println("Connection refused")
-    case strings.Contains(err.Error(), "authentication"):
-        log.Println("Authentication failed")
-    default:
-        log.Printf("Request failed: %v", err)
-    }
-    return
-}
-
-// Check response for errors
 if !response.Success {
-    log.Printf("API returned error: %s", response.Error)
+    // Handle HTTP error responses
+    log.Printf("HTTP Error: %d - %s", response.StatusCode, response.Error)
     return
 }
 ```
@@ -490,117 +429,18 @@ if !response.Success {
 ## Best Practices
 
 1. **Connection Management**: Always close connections when done
-2. **Error Handling**: Check for errors after each operation
-3. **Authentication**: Store credentials securely and use environment variables
-4. **Timeouts**: Set appropriate timeouts for different types of requests
-5. **Retries**: Configure retry logic for transient failures
-6. **Logging**: Enable logging for debugging and monitoring
-7. **Rate Limiting**: Implement rate limiting for external APIs
-8. **Circuit Breaker**: Use circuit breaker patterns for fault tolerance
-9. **Monitoring**: Monitor API usage and performance
-10. **Security**: Use HTTPS for all external API calls
+2. **Timeout Configuration**: Set appropriate timeouts for different operations
+3. **Retry Logic**: Configure retry attempts based on your use case
+4. **Authentication**: Use secure authentication methods
+5. **Error Handling**: Implement comprehensive error handling
+6. **Monitoring**: Monitor API usage and performance
+7. **Rate Limiting**: Implement rate limiting to avoid overwhelming APIs
+8. **Circuit Breaker**: Use circuit breaker patterns for resilience
 
-## Common Third-Party API Integrations
+## Contributing
 
-### REST APIs
+Contributions are welcome! Please read the contributing guidelines and submit pull requests for any improvements.
 
-```go
-// GitHub API
-request := types.CreateAPIRequest(types.MethodGET, "https://api.github.com/user")
-request.AddHeader("Accept", "application/vnd.github.v3+json")
-request.SetAuth(&types.Authentication{
-    Type:  types.AuthTypeBearer,
-    Token: "your-github-token",
-})
+## License
 
-// Stripe API
-request := types.CreateAPIRequest(types.MethodPOST, "https://api.stripe.com/v1/charges")
-request.AddHeader("Content-Type", "application/x-www-form-urlencoded")
-request.SetAuth(&types.Authentication{
-    Type:         types.AuthTypeAPIKey,
-    APIKey:       "your-stripe-secret-key",
-    APIKeyHeader: "Authorization",
-})
-request.AddFormData("amount", "2000")
-request.AddFormData("currency", "usd")
-request.AddFormData("source", "tok_visa")
-
-// Twilio API
-request := types.CreateAPIRequest(types.MethodPOST, "https://api.twilio.com/2010-04-01/Accounts/ACxxx/Messages.json")
-request.AddHeader("Content-Type", "application/x-www-form-urlencoded")
-request.SetAuth(&types.Authentication{
-    Type:     types.AuthTypeBasic,
-    Username: "your-twilio-sid",
-    Password: "your-twilio-auth-token",
-})
-```
-
-### GraphQL APIs
-
-```go
-// GitHub GraphQL API
-query := `
-    query($login: String!) {
-        user(login: $login) {
-            name
-            email
-            repositories(first: 10) {
-                nodes {
-                    name
-                    description
-                }
-            }
-        }
-    }
-`
-
-request := types.CreateGraphQLRequest(query)
-request.AddVariable("login", "octocat")
-request.SetAuth(&types.Authentication{
-    Type:  types.AuthTypeBearer,
-    Token: "your-github-token",
-})
-```
-
-### gRPC Services
-
-```go
-// Custom gRPC service
-request := types.CreategRPCRequest("UserService", "GetUser")
-request.Data = map[string]interface{}{
-    "id": "123",
-}
-request.AddMetadata("authorization", "Bearer your-jwt-token")
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Connection Timeouts**: Increase timeout values or check network connectivity
-2. **Authentication Errors**: Verify credentials and authentication method
-3. **Rate Limiting**: Implement backoff strategies or request queuing
-4. **SSL/TLS Issues**: Check certificate validity and TLS configuration
-5. **Proxy Issues**: Configure proxy settings correctly
-6. **Memory Issues**: Use streaming for large responses
-
-### Debugging
-
-```go
-// Enable debug logging
-logger := logrus.New()
-logger.SetLevel(logrus.DebugLevel)
-
-// Check provider status
-if !apiManager.IsProviderConnected("http") {
-    log.Println("HTTP provider not connected")
-}
-
-// Get detailed error information
-response, err := apiManager.SendRequest(ctx, "http", request)
-if err != nil {
-    log.Printf("Detailed error: %+v", err)
-}
-```
-
-This API library provides a comprehensive solution for integrating with any third-party API, offering flexibility, reliability, and ease of use for all your API integration needs.
+This library is licensed under the MIT License. See the LICENSE file for details.

@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v1.1.1] - 2025-09-17
+
+### Fixed
+- **Memory Cache Provider**: Fixed goroutine leak in cleanup mechanism by adding proper stop channel
+- **MySQL Database Provider**: Improved connection pool configuration and transaction rollback error handling
+- **S3 Storage Provider**: Fixed object existence error handling with proper AWS error type checking
+- **JWT Authentication Provider**: Generate secure random keys when no environment variable is set and improved error logging security
+- **Redis Rate Limiter Provider**: Added graceful disconnect with timeout handling to prevent connection issues
+- **Password Validation**: Strengthened password requirements (minimum 12 characters, mixed case, numbers, special characters)
+- **File Cleanup**: Removed unnecessary build files (event/Makefile, event/tidy.sh)
+
+### Added
+- **Comprehensive Documentation**: Added detailed README files for all 23 modules with examples and usage guides
+- **Enhanced Password Validation**: Added `ValidatePasswordWithDetails` function for detailed error messages
+- **Improved Error Handling**: Better error handling across all providers with proper context and timeouts
+
+### Enhanced
+- **Connection Management**: Improved connection lifecycle management across database and cache providers
+- **Security Practices**: Enhanced security with stronger password validation and secure key generation
+- **Transaction Handling**: More robust transaction handling with proper rollback error management
+- **Documentation Quality**: Significantly improved documentation coverage and examples
+
 ## [v1.1.0] - 2025-09-15
 
 ### Added
@@ -67,5 +89,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Payment (Stripe, PayPal, Midtrans, Xendit)
 - And many more...
 
+[v1.1.1]: https://github.com/anasamu/go-micro-libs/releases/tag/v1.1.1
 [v1.1.0]: https://github.com/anasamu/go-micro-libs/releases/tag/v1.1.0
 [v1.0.0]: https://github.com/anasamu/go-micro-libs/releases/tag/v1.0.0

@@ -374,14 +374,16 @@ func (p *Provider) ObjectExists(ctx context.Context, request *types.ObjectExists
 		return false, fmt.Errorf("azure provider not configured")
 	}
 
-	// Get blob properties
+	// Get blob properties with proper error handling
 	_, err := p.client.ServiceClient().NewContainerClient(request.Bucket).NewBlobClient(request.Key).GetProperties(ctx, nil)
 	if err != nil {
 		// Check if it's a "not found" error
 		if strings.Contains(err.Error(), "BlobNotFound") {
 			return false, nil
 		}
-		return false, fmt.Errorf("failed to check blob existence: %w", err)
+		// Log error without exposing sensitive details
+		p.logger.WithField("error_type", "blob_check").Debug("Failed to check blob existence")
+		return false, fmt.Errorf("failed to check blob existence")
 	}
 
 	return true, nil

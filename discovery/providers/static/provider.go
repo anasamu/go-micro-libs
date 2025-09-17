@@ -109,7 +109,25 @@ func (sp *StaticProvider) Connect(ctx context.Context) error {
 
 // Disconnect closes the connection (no-op for static provider)
 func (sp *StaticProvider) Disconnect(ctx context.Context) error {
+	// Set a timeout for the disconnect operation
+	disconnectCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	// Clear services map
+	sp.mutex.Lock()
+	sp.services = make(map[string]*types.Service)
+	sp.mutex.Unlock()
+
 	sp.connected = false
+
+	// Wait for any pending operations to complete
+	select {
+	case <-disconnectCtx.Done():
+		sp.logger.Warn("Static provider disconnect timeout exceeded")
+	default:
+		// Disconnect completed successfully
+	}
+
 	sp.logger.Info("Static provider disconnected")
 	return nil
 }

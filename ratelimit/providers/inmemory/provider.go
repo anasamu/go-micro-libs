@@ -129,10 +129,17 @@ func (p *Provider) Connect(ctx context.Context) error {
 func (p *Provider) Disconnect(ctx context.Context) error {
 	p.connected = false
 
-	// Stop cleanup routine
-	close(p.stopCleanup)
+	// Stop cleanup routine gracefully
 	if p.cleanupTicker != nil {
 		p.cleanupTicker.Stop()
+	}
+
+	// Signal cleanup goroutine to stop
+	select {
+	case p.stopCleanup <- struct{}{}:
+		// Successfully sent stop signal
+	case <-time.After(5 * time.Second):
+		p.logger.Warn("Timeout waiting for cleanup goroutine to stop")
 	}
 
 	p.logger.Info("Disconnected from in-memory storage")

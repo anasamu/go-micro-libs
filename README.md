@@ -654,7 +654,7 @@ Jika Anda mengalami masalah atau memiliki pertanyaan:
 
 ### v1.1.0
 - **New Modules**: API, Email, Edge Computing, ZeroTrust
-- **New Providers**: 
+- **New Providers**:
   - Storage: Cloudflare R2
   - Auth: Auth0, Keycloak, Okta
   - Database: Cassandra, CockroachDB, Elasticsearch, InfluxDB, MariaDB

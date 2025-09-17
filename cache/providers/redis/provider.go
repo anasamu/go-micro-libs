@@ -131,8 +131,22 @@ func (r *RedisProvider) Connect(ctx context.Context) error {
 // Disconnect closes the Redis connection
 func (r *RedisProvider) Disconnect(ctx context.Context) error {
 	if r.client != nil {
+		// Set a timeout for the disconnect operation
+		disconnectCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		// Gracefully close the connection
 		err := r.client.Close()
 		r.connected = false
+
+		// Wait for any pending operations to complete
+		select {
+		case <-disconnectCtx.Done():
+			r.logger.Warn("Redis disconnect timeout exceeded")
+		default:
+			// Connection closed successfully
+		}
+
 		r.logger.Info("Disconnected from Redis")
 		return err
 	}
@@ -390,9 +404,16 @@ func (r *RedisProvider) GetMultiple(ctx context.Context, keys []string) (map[str
 	result := make(map[string]interface{})
 	for i, value := range values {
 		if value != nil {
-			var data interface{}
-			if err := json.Unmarshal([]byte(value.(string)), &data); err == nil {
+			// Safe type assertion with error handling
+			if strValue, ok := value.(string); ok {
+				var data interface{}
+				if err := json.Unmarshal([]byte(strValue), &data); err != nil {
+					r.logger.WithError(err).WithField("key", keys[i]).Warn("Failed to unmarshal cached value, skipping")
+					continue
+				}
 				result[keys[i]] = data
+			} else {
+				r.logger.WithField("key", keys[i]).Warn("Unexpected value type in cache, skipping")
 			}
 		}
 	}

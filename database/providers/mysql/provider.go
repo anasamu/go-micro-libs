@@ -108,10 +108,11 @@ func (p *Provider) Configure(config map[string]interface{}) error {
 		return fmt.Errorf("failed to connect to MySQL: %w", err)
 	}
 
-	// Configure connection pool
+	// Configure connection pool with proper settings
 	db.SetMaxOpenConns(maxConns)
 	db.SetMaxIdleConns(minConns)
-	db.SetConnMaxLifetime(time.Hour)
+	db.SetConnMaxLifetime(30 * time.Minute) // Shorter lifetime for better connection health
+	db.SetConnMaxIdleTime(5 * time.Minute)  // Close idle connections after 5 minutes
 
 	p.db = db
 	p.config = config
@@ -143,7 +144,25 @@ func (p *Provider) Connect(ctx context.Context) error {
 // Disconnect disconnects from the database
 func (p *Provider) Disconnect(ctx context.Context) error {
 	if p.db != nil {
-		return p.db.Close()
+		// Set a timeout for the disconnect operation
+		disconnectCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+
+		// Close all idle connections first
+		p.db.SetMaxIdleConns(0)
+
+		// Wait a moment for connections to close
+		select {
+		case <-disconnectCtx.Done():
+			p.logger.Warn("MySQL disconnect timeout exceeded")
+		case <-time.After(2 * time.Second):
+			// Continue with close
+		}
+
+		err := p.db.Close()
+		p.db = nil
+		p.logger.Info("Disconnected from MySQL")
+		return err
 	}
 	return nil
 }
@@ -189,14 +208,21 @@ func (p *Provider) WithTransaction(ctx context.Context, fn func(types.Transactio
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 
+	// Use named return to avoid variable shadowing
 	defer func() {
 		if p := recover(); p != nil {
-			tx.Rollback()
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				fmt.Printf("Failed to rollback transaction after panic: %v\n", rollbackErr)
+			}
 			panic(p)
 		} else if err != nil {
-			tx.Rollback()
+			if rollbackErr := tx.Rollback(); rollbackErr != nil {
+				fmt.Printf("Failed to rollback transaction: %v\n", rollbackErr)
+			}
 		} else {
-			err = tx.Commit()
+			if commitErr := tx.Commit(); commitErr != nil {
+				err = fmt.Errorf("failed to commit transaction: %w", commitErr)
+			}
 		}
 	}()
 

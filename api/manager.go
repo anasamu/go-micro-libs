@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/anasamu/go-micro-libs/api/types"
@@ -566,11 +567,88 @@ func (am *APIManager) validateAPIRequest(request *types.APIRequest) error {
 		return fmt.Errorf("method is required")
 	}
 
+	// Validate HTTP method
+	validMethods := []types.HTTPMethod{types.MethodGET, types.MethodPOST, types.MethodPUT, types.MethodDELETE, types.MethodPATCH, types.MethodHEAD, types.MethodOPTIONS}
+	methodValid := false
+	for _, validMethod := range validMethods {
+		if request.Method == validMethod {
+			methodValid = true
+			break
+		}
+	}
+	if !methodValid {
+		return fmt.Errorf("invalid HTTP method: %s", request.Method)
+	}
+
 	if request.URL == "" {
 		return fmt.Errorf("URL is required")
 	}
 
+	// Validate URL format
+	if !am.isValidURL(request.URL) {
+		return fmt.Errorf("invalid URL format: %s", request.URL)
+	}
+
+	// Validate headers for malicious content
+	if request.Headers != nil {
+		for _, header := range request.Headers {
+			if header.Name == "" {
+				return fmt.Errorf("header name cannot be empty")
+			}
+			if len(header.Name) > 1000 || len(header.Value) > 10000 {
+				return fmt.Errorf("header name or value too long")
+			}
+			// Check for CRLF injection
+			if strings.Contains(header.Name, "\r") || strings.Contains(header.Name, "\n") ||
+				strings.Contains(header.Value, "\r") || strings.Contains(header.Value, "\n") {
+				return fmt.Errorf("header contains invalid characters")
+			}
+		}
+	}
+
+	// Validate request body size
+	if request.Body != nil {
+		bodySize := 0
+		switch v := request.Body.(type) {
+		case string:
+			bodySize = len(v)
+		case []byte:
+			bodySize = len(v)
+		case map[string]interface{}:
+			// Rough estimation for JSON objects
+			bodySize = len(fmt.Sprintf("%v", v))
+		default:
+			bodySize = len(fmt.Sprintf("%v", v))
+		}
+		if int64(bodySize) > am.config.MaxRequestSize {
+			return fmt.Errorf("request body size %d exceeds maximum allowed size %d", bodySize, am.config.MaxRequestSize)
+		}
+	}
+
 	return nil
+}
+
+// isValidURL validates URL format
+func (am *APIManager) isValidURL(url string) bool {
+	// Basic URL validation
+	if len(url) > 2048 {
+		return false
+	}
+
+	// Check for basic URL structure
+	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
+		return false
+	}
+
+	// Check for invalid characters
+	invalidChars := []string{"\r", "\n", "\t", "\x00"}
+	for _, char := range invalidChars {
+		if strings.Contains(url, char) {
+			return false
+		}
+	}
+
+	return true
 }
 
 // validateBatchRequest validates a batch request

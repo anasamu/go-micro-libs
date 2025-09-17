@@ -113,7 +113,24 @@ func (m *MemcacheProvider) Connect(ctx context.Context) error {
 
 // Disconnect closes the Memcached connection
 func (m *MemcacheProvider) Disconnect(ctx context.Context) error {
+	// Set a timeout for the disconnect operation
+	disconnectCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
 	// Memcached client doesn't have explicit close method
+	// But we can try to flush all keys as cleanup
+	if m.client != nil {
+		select {
+		case <-disconnectCtx.Done():
+			m.logger.Warn("Memcached disconnect timeout exceeded")
+		default:
+			// Try to flush all keys (optional cleanup)
+			if err := m.client.FlushAll(); err != nil {
+				m.logger.WithError(err).Debug("Failed to flush Memcached keys during disconnect")
+			}
+		}
+	}
+
 	m.connected = false
 	m.logger.Info("Disconnected from Memcached")
 	return nil

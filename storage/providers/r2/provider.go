@@ -380,14 +380,16 @@ func (p *Provider) ObjectExists(ctx context.Context, request *storageProvider.Ob
 		input.VersionId = aws.String(request.VersionID)
 	}
 
-	// Check if object exists
+	// Check if object exists with proper error handling
 	_, err := p.client.HeadObject(ctx, input)
 	if err != nil {
 		// Check if it's a "not found" error
 		if strings.Contains(err.Error(), "NoSuchKey") || strings.Contains(err.Error(), "NotFound") {
 			return false, nil
 		}
-		return false, fmt.Errorf("failed to check object existence: %w", err)
+		// Log error without exposing sensitive details
+		p.logger.WithField("error_type", "object_check").Debug("Failed to check object existence")
+		return false, fmt.Errorf("failed to check object existence")
 	}
 
 	return true, nil

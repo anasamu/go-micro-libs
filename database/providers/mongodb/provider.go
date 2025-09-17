@@ -92,14 +92,18 @@ func (p *Provider) Configure(config map[string]interface{}) error {
 		timeout = 10 * time.Second
 	}
 
-	// Create client options
+	// Create client options with proper connection management
 	clientOptions := options.Client().
 		ApplyURI(uri).
 		SetMaxPoolSize(uint64(maxPool)).
 		SetMinPoolSize(uint64(minPool)).
 		SetServerSelectionTimeout(timeout).
 		SetConnectTimeout(timeout).
-		SetSocketTimeout(timeout)
+		SetSocketTimeout(timeout).
+		SetMaxConnIdleTime(5 * time.Minute). // Close idle connections after 5 minutes
+		SetMaxConnecting(10).                // Limit concurrent connection attempts
+		SetRetryWrites(true).                // Enable retryable writes
+		SetRetryReads(true)                  // Enable retryable reads
 
 	// Connect to MongoDB
 	client, err := mongo.Connect(context.Background(), clientOptions)
@@ -141,7 +145,20 @@ func (p *Provider) Connect(ctx context.Context) error {
 // Disconnect disconnects from the database
 func (p *Provider) Disconnect(ctx context.Context) error {
 	if p.client != nil {
-		return p.client.Disconnect(ctx)
+		// Set a timeout for the disconnect operation
+		disconnectCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+
+		// Gracefully disconnect
+		err := p.client.Disconnect(disconnectCtx)
+		if err != nil {
+			p.logger.WithError(err).Warn("Error during MongoDB disconnect")
+		}
+
+		p.client = nil
+		p.db = nil
+		p.logger.Info("Disconnected from MongoDB")
+		return err
 	}
 	return nil
 }

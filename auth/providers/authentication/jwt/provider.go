@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/pem"
 	"fmt"
 	"os"
@@ -78,7 +79,12 @@ func DefaultJWTConfig() *JWTConfig {
 
 	secretKey := os.Getenv("JWT_SECRET_KEY")
 	if secretKey == "" {
-		secretKey = "default-secret-key-change-in-production"
+		// Generate a secure random key if not provided
+		randomBytes := make([]byte, 32)
+		if _, err := rand.Read(randomBytes); err != nil {
+			panic("Failed to generate secure JWT secret key: " + err.Error())
+		}
+		secretKey = hex.EncodeToString(randomBytes)
 	}
 
 	issuer := os.Getenv("JWT_ISSUER")
@@ -283,8 +289,9 @@ func (jp *JWTProvider) validateTokenInternal(ctx context.Context, tokenString st
 	})
 
 	if err != nil {
-		jp.logger.WithError(err).Debug("Token validation failed")
-		return nil, fmt.Errorf("token validation failed: %w", err)
+		// Log error without exposing sensitive details
+		jp.logger.WithField("error_type", "token_validation").Debug("Token validation failed")
+		return nil, fmt.Errorf("token validation failed")
 	}
 
 	if claims, ok := token.Claims.(*JWTClaims); ok && token.Valid {
