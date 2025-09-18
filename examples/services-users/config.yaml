@@ -1,0 +1,68 @@
+server:
+  port: "8080"
+  host: "0.0.0.0"
+  environment: "production"
+  service_name: "user-service"
+  version: "1.0.0"
+  read_timeout: 30
+  write_timeout: 30
+  idle_timeout: 120
+
+logging:
+  level: "info"
+  format: "json"
+  output: "stdout"
+  index: "logs-users"
+
+monitoring:
+  prometheus:
+    enabled: true
+    port: "9090"
+    path: "/metrics"
+  jaeger:
+    enabled: false
+
+kafka:
+  brokers: ["localhost:9092"]
+  topic: "users.events"
+  group_id: "users-service"
+
+grpc:
+  host: "0.0.0.0"
+  port: "50051"
+  timeout: 30
+
+services:
+  user_service:
+    name: "user-service"
+    host: "localhost"
+    port: "8080"
+    protocol: "http"
+    version: "v1"
+    environment: "production"
+    health_check:
+      enabled: true
+      path: "/health"
+      interval: 30
+      timeout: 5
+    retry:
+      enabled: true
+      max_attempts: 3
+      initial_delay: 200
+      max_delay: 2000
+      multiplier: 2.0
+      jitter: true
+    timeout:
+      connect: 5000
+      read: 10000
+      write: 10000
+      total: 20000
+    circuit_breaker:
+      enabled: true
+      failure_threshold: 5
+      success_threshold: 2
+      timeout: 10
+    load_balancer:
+      strategy: "round_robin"
+      health_check: true
+
