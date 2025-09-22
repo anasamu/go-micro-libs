@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/anasamu/go-micro-libs/config/types"
+	apperrors "github.com/anasamu/go-micro-libs/errors"
 )
 
 // Manager manages configuration providers and provides a unified interface
@@ -38,7 +39,7 @@ func (m *Manager) SetCurrentProvider(name string) error {
 
 	provider, exists := m.providers[name]
 	if !exists {
-		return fmt.Errorf("provider %s not found", name)
+		return apperrors.New(apperrors.CodeNotFound, fmt.Sprintf("provider %s not found", name))
 	}
 
 	m.current = provider
@@ -52,12 +53,12 @@ func (m *Manager) Load() (*types.Config, error) {
 	m.mu.RUnlock()
 
 	if current == nil {
-		return nil, fmt.Errorf("no current provider set")
+		return nil, apperrors.New(apperrors.CodeInvalidInput, "no current provider set")
 	}
 
 	config, err := current.Load()
 	if err != nil {
-		return nil, fmt.Errorf("failed to load config: %w", err)
+		return nil, apperrors.Dependency("failed to load config", err)
 	}
 
 	m.mu.Lock()
@@ -74,12 +75,12 @@ func (m *Manager) Save(config *types.Config) error {
 	m.mu.RUnlock()
 
 	if current == nil {
-		return fmt.Errorf("no current provider set")
+		return apperrors.New(apperrors.CodeInvalidInput, "no current provider set")
 	}
 
 	err := current.Save(config)
 	if err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
+		return apperrors.Dependency("failed to save config", err)
 	}
 
 	m.mu.Lock()
@@ -110,7 +111,7 @@ func (m *Manager) Watch(callback func(*types.Config)) error {
 	m.mu.RUnlock()
 
 	if current == nil {
-		return fmt.Errorf("no current provider set")
+		return apperrors.New(apperrors.CodeInvalidInput, "no current provider set")
 	}
 
 	return current.Watch(func(config *types.Config) {

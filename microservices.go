@@ -5,8 +5,6 @@
 // allowing you to import everything from a single module:
 //
 //	import "github.com/anasamu/go-micro-libs"
-//
-// Version: v1.1.0
 package microservices
 
 // Re-export main services for unified access

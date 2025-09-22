@@ -34,17 +34,17 @@ func main() {
 	must(err)
 
 	// 2) Logging via bootstrap
-	lb := bootstrap.InitLogging(orDefault(cfg.Server.ServiceName, "user-service"), cfg.Server.Version, cfg.Logging.Level, cfg.Logging.Format, cfg.Logging.Output, cfg.Logging.Index)
+	lb := bootstrap.InitLogging(orDefault(cfg.Server.ServiceName, "user-service"), cfg.Server.Version, cfg.Logging.Level, cfg.Logging.Format, cfg.Logging.Output, "")
 	core := lb.Core
 	logMgr := lb.LogMgr
 
 	// 3) HTTP via bootstrap
 	commMgr, httpProv := bootstrap.InitHTTP(core,
-		orDefault(cfg.Server.Host, "0.0.0.0"),
-		toInt(orDefault(cfg.Server.Port, "8080")),
-		cfg.Server.ReadTimeout,
-		cfg.Server.WriteTimeout,
-		cfg.Server.IdleTimeout,
+		orDefault(cfg.API.HTTP.Host, "0.0.0.0"),
+		toInt(orDefault(cfg.API.HTTP.Port, "8080")),
+		cfg.API.HTTP.ReadTimeout,
+		cfg.API.HTTP.WriteTimeout,
+		0,
 	)
 
 	// 5) Discovery (Consul)
@@ -63,8 +63,8 @@ func main() {
 	reg := &disctypes.ServiceRegistration{
 		ID:       orDefault(os.Getenv("SERVICE_ID"), "user-service-1"),
 		Name:     orDefault(cfg.Server.ServiceName, "user-service"),
-		Address:  orDefault(cfg.Server.Host, "127.0.0.1"),
-		Port:     toInt(orDefault(cfg.Server.Port, "8080")),
+		Address:  orDefault(cfg.API.HTTP.Host, "127.0.0.1"),
+		Port:     toInt(orDefault(cfg.API.HTTP.Port, "8080")),
 		Protocol: orDefault(cfg.Services.UserService.Protocol, "http"),
 		Tags:     []string{"users", cfg.Server.Environment},
 		Metadata: map[string]string{"version": cfg.Server.Version},
@@ -73,7 +73,7 @@ func main() {
 	must(discMgr.RegisterService(ctx, reg))
 
 	// 6) Messaging (Kafka) via bootstrap
-	msgMgr, err := bootstrap.InitMessaging(core, cfg.Kafka.Brokers, cfg.Kafka.GroupID)
+	msgMgr, err := bootstrap.InitMessaging(core, cfg.Messaging.Kafka.Brokers, cfg.Messaging.Kafka.GroupID)
 	must(err)
 
 	// 7) Monitoring (Prometheus) via bootstrap
@@ -93,8 +93,8 @@ func main() {
 		cfg.Database.PostgreSQL.Password,
 		cfg.Database.PostgreSQL.DBName,
 		cfg.Database.PostgreSQL.SSLMode,
-		cfg.Database.PostgreSQL.MaxConns,
-		cfg.Database.PostgreSQL.MinConns,
+		cfg.Database.PostgreSQL.MaxOpenConns,
+		cfg.Database.PostgreSQL.MinOpenConns,
 	)
 	must(err)
 
@@ -120,8 +120,8 @@ func main() {
 
 	// 8b) Messaging subscription handler (consume events from other services)
 	must(msgMgr.SubscribeToTopic(ctx, "kafka", &msgt.SubscribeRequest{
-		Topic:   cfg.Kafka.Topic,
-		GroupID: cfg.Kafka.GroupID,
+		Topic:   cfg.Messaging.Kafka.Topic,
+		GroupID: cfg.Messaging.Kafka.GroupID,
 		AutoAck: true,
 	}, func(c context.Context, m *msgt.Message) error {
 		switch m.Type {
@@ -201,4 +201,4 @@ func orDefault[T comparable](v, def T) T {
 	return v
 }
 
-// no custom mux; routing handled by communication provider
+// routing handled by communication provider

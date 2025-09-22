@@ -1,18 +1,29 @@
 server:
-  port: "8080"
-  host: "0.0.0.0"
   environment: "production"
   service_name: "user-service"
   version: "1.0.0"
-  read_timeout: 30
-  write_timeout: 30
-  idle_timeout: 120
+  config:
+    provider: "vault"
+    vault:
+      address: "http://localhost:8200"
+      token: "s.1234567890"
+      path: "secret/data/config"
+    file:
+      path: "config.yaml"
+      type: "yaml"
+    env:
+      prefix: "USER_SERVICE"
+    consul:
+      address: "localhost:8500"
+      token: "s.1234567890"
+      path: "config"
 
 logging:
   level: "info"
   format: "json"
   output: "stdout"
-  index: "logs-users"
+  elastic:
+    index: "logs-users"
 
 monitoring:
   prometheus:
@@ -22,15 +33,42 @@ monitoring:
   jaeger:
     enabled: false
 
-kafka:
-  brokers: ["localhost:9092"]
-  topic: "users.events"
-  group_id: "users-service"
+api:
+  http:
+    host: "0.0.0.0"
+    port: "8080"
+    read_timeout: 30
+    write_timeout: 30
+  grpc:
+    host: "0.0.0.0"
+    port: "50051"
+    timeout: 30
 
-grpc:
-  host: "0.0.0.0"
-  port: "50051"
-  timeout: 30
+messaging:
+  provider: "kafka"
+  kafka:
+    brokers: ["localhost:9092"]
+    topic: "users.events"
+    group_id: "users-service"
+
+communication:
+  provider: "http"
+  http:
+    host: "localhost"
+    port: 8080
+    base_path: "/"
+    read_timeout: 10
+    write_timeout: 10
+    idle_timeout: 120
+    retries: 3
+  grpc:
+    host: "localhost"
+    port: "50051"
+    timeout: 30
+  graphql:
+    host: "localhost"
+    port: 8081
+    path: "/graphql"
 
 services:
   user_service:

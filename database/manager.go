@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/anasamu/go-micro-libs/database/types"
+	apperrors "github.com/anasamu/go-micro-libs/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -93,12 +94,12 @@ func NewDatabaseManager(config *ManagerConfig, logger *logrus.Logger) *DatabaseM
 // RegisterProvider registers a database provider
 func (dm *DatabaseManager) RegisterProvider(provider DatabaseProvider) error {
 	if provider == nil {
-		return fmt.Errorf("provider cannot be nil")
+		return apperrors.New(apperrors.CodeInvalidInput, "provider cannot be nil")
 	}
 
 	name := provider.GetName()
 	if name == "" {
-		return fmt.Errorf("provider name cannot be empty")
+		return apperrors.New(apperrors.CodeInvalidInput, "provider name cannot be empty")
 	}
 
 	dm.providers[name] = provider
@@ -111,7 +112,7 @@ func (dm *DatabaseManager) RegisterProvider(provider DatabaseProvider) error {
 func (dm *DatabaseManager) GetProvider(name string) (DatabaseProvider, error) {
 	provider, exists := dm.providers[name]
 	if !exists {
-		return nil, fmt.Errorf("database provider not found: %s", name)
+		return nil, apperrors.New(apperrors.CodeNotFound, fmt.Sprintf("database provider not found: %s", name))
 	}
 	return provider, nil
 }
@@ -162,7 +163,7 @@ func (dm *DatabaseManager) Disconnect(ctx context.Context, providerName string) 
 
 	err = provider.Disconnect(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to disconnect from database: %w", err)
+		return apperrors.Dependency("failed to disconnect from database", err)
 	}
 
 	dm.logger.WithField("provider", providerName).Info("Database disconnected successfully")
@@ -178,7 +179,7 @@ func (dm *DatabaseManager) Ping(ctx context.Context, providerName string) error 
 
 	err = provider.Ping(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to ping database: %w", err)
+		return apperrors.Dependency("failed to ping database", err)
 	}
 
 	return nil
@@ -193,7 +194,7 @@ func (dm *DatabaseManager) Query(ctx context.Context, providerName, query string
 
 	result, err := provider.Query(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute query: %w", err)
+		return nil, apperrors.Dependency("failed to execute query", err)
 	}
 
 	dm.logger.WithFields(logrus.Fields{
@@ -213,7 +214,7 @@ func (dm *DatabaseManager) QueryRow(ctx context.Context, providerName, query str
 
 	row, err := provider.QueryRow(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute query row: %w", err)
+		return nil, apperrors.Dependency("failed to execute query row", err)
 	}
 
 	dm.logger.WithFields(logrus.Fields{
@@ -233,7 +234,7 @@ func (dm *DatabaseManager) Exec(ctx context.Context, providerName, query string,
 
 	result, err := provider.Exec(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute query: %w", err)
+		return nil, apperrors.Dependency("failed to execute query", err)
 	}
 
 	dm.logger.WithFields(logrus.Fields{
@@ -253,7 +254,7 @@ func (dm *DatabaseManager) BeginTransaction(ctx context.Context, providerName st
 
 	tx, err := provider.BeginTransaction(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+		return nil, apperrors.Dependency("failed to begin transaction", err)
 	}
 
 	dm.logger.WithField("provider", providerName).Debug("Transaction started")
@@ -269,7 +270,7 @@ func (dm *DatabaseManager) WithTransaction(ctx context.Context, providerName str
 
 	err = provider.WithTransaction(ctx, fn)
 	if err != nil {
-		return fmt.Errorf("failed to execute transaction: %w", err)
+		return apperrors.Dependency("failed to execute transaction", err)
 	}
 
 	dm.logger.WithField("provider", providerName).Debug("Transaction completed")
@@ -285,7 +286,7 @@ func (dm *DatabaseManager) Prepare(ctx context.Context, providerName, query stri
 
 	stmt, err := provider.Prepare(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to prepare statement: %w", err)
+		return nil, apperrors.Dependency("failed to prepare statement", err)
 	}
 
 	dm.logger.WithFields(logrus.Fields{
@@ -317,7 +318,7 @@ func (dm *DatabaseManager) GetStats(ctx context.Context, providerName string) (*
 
 	stats, err := provider.GetStats(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get database stats: %w", err)
+		return nil, apperrors.Dependency("failed to get database stats", err)
 	}
 
 	return stats, nil

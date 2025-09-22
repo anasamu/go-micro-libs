@@ -27,47 +27,80 @@ func (p *Provider) Load() (*types.Config, error) {
 
 	// Load server configuration
 	config.Server = types.ServerConfig{
-		Port:         p.getString("SERVER_PORT", "8080"),
-		Host:         p.getString("SERVER_HOST", "0.0.0.0"),
-		Environment:  p.getString("SERVER_ENVIRONMENT", "development"),
-		ServiceName:  p.getString("SERVER_SERVICE_NAME", ""),
-		Version:      p.getString("SERVER_VERSION", ""),
-		ReadTimeout:  p.getInt("SERVER_READ_TIMEOUT", 30),
-		WriteTimeout: p.getInt("SERVER_WRITE_TIMEOUT", 30),
-		IdleTimeout:  p.getInt("SERVER_IDLE_TIMEOUT", 120),
+		ServiceName: p.getString("SERVER_SERVICE_NAME", ""),
+		Version:     p.getString("SERVER_VERSION", ""),
+		Environment: p.getString("SERVER_ENVIRONMENT", "development"),
+		Configuration: types.ConfigurationConfig{
+			Provider: p.getString("CONFIG_PROVIDER", "file"),
+			File: types.FileConfigProvider{
+				Path: p.getString("CONFIG_FILE_PATH", ""),
+				Type: p.getString("CONFIG_FILE_TYPE", "yaml"),
+			},
+			Env:    types.EnvConfigProvider{Prefix: p.getString("CONFIG_ENV_PREFIX", "")},
+			Consul: types.ConsulConfig{Address: p.getString("CONFIG_CONSUL_ADDRESS", ""), Token: p.getString("CONFIG_CONSUL_TOKEN", "")},
+			Vault:  types.VaultConfig{Address: p.getString("CONFIG_VAULT_ADDRESS", ""), Token: p.getString("CONFIG_VAULT_TOKEN", ""), Path: p.getString("CONFIG_VAULT_PATH", "")},
+		},
 	}
 
 	// Load database configuration
 	config.Database = types.DatabaseConfig{
 		PostgreSQL: types.PostgreSQLConfig{
-			Host:     p.getString("DB_POSTGRESQL_HOST", "localhost"),
-			Port:     p.getInt("DB_POSTGRESQL_PORT", 5432),
-			User:     p.getString("DB_POSTGRESQL_USER", ""),
-			Password: p.getString("DB_POSTGRESQL_PASSWORD", ""),
-			DBName:   p.getString("DB_POSTGRESQL_DBNAME", ""),
-			SSLMode:  p.getString("DB_POSTGRESQL_SSLMODE", "disable"),
-			MaxConns: p.getInt("DB_POSTGRESQL_MAX_CONNS", 25),
-			MinConns: p.getInt("DB_POSTGRESQL_MIN_CONNS", 5),
+			Host:            p.getString("DB_POSTGRESQL_HOST", "localhost"),
+			Port:            p.getInt("DB_POSTGRESQL_PORT", 5432),
+			User:            p.getString("DB_POSTGRESQL_USER", ""),
+			Password:        p.getString("DB_POSTGRESQL_PASSWORD", ""),
+			DBName:          p.getString("DB_POSTGRESQL_DBNAME", ""),
+			SSLMode:         p.getString("DB_POSTGRESQL_SSLMODE", "disable"),
+			MaxOpenConns:    p.getInt("DB_POSTGRESQL_MAX_OPEN_CONNS", 25),
+			MaxIdleConns:    p.getInt("DB_POSTGRESQL_MAX_IDLE_CONNS", 5),
+			MinOpenConns:    p.getInt("DB_POSTGRESQL_MIN_OPEN_CONNS", 5),
+			ConnMaxLifetime: p.getInt("DB_POSTGRESQL_CONN_MAX_LIFETIME", 3600),
+			ConnMaxIdleTime: p.getInt("DB_POSTGRESQL_CONN_MAX_IDLE_TIME", 1800),
 		},
 		MongoDB: types.MongoDBConfig{
-			URI:      p.getString("DB_MONGODB_URI", "mongodb://localhost:27017"),
-			Database: p.getString("DB_MONGODB_DATABASE", ""),
-			MaxPool:  p.getInt("DB_MONGODB_MAX_POOL", 100),
-			MinPool:  p.getInt("DB_MONGODB_MIN_POOL", 10),
+			URI:               p.getString("DB_MONGODB_URI", "mongodb://localhost:27017"),
+			Database:          p.getString("DB_MONGODB_DATABASE", ""),
+			Username:          p.getString("DB_MONGODB_USERNAME", ""),
+			Password:          p.getString("DB_MONGODB_PASSWORD", ""),
+			Hosts:             p.getStringSlice("DB_MONGODB_HOSTS", []string{}),
+			MaxPoolSize:       p.getInt("DB_MONGODB_MAX_POOL_SIZE", 100),
+			MinPoolSize:       p.getInt("DB_MONGODB_MIN_POOL_SIZE", 10),
+			MaxConnIdleTime:   p.getInt("DB_MONGODB_MAX_CONN_IDLE_TIME", 300000),
+			MaxConnecting:     p.getInt("DB_MONGODB_MAX_CONNECTING", 10),
+			MaxConnLifeTime:   p.getInt("DB_MONGODB_MAX_CONN_LIFE_TIME", 3600000),
+			ConnectTimeout:    p.getInt("DB_MONGODB_CONNECT_TIMEOUT", 30000),
+			SocketTimeout:     p.getInt("DB_MONGODB_SOCKET_TIMEOUT", 30000),
+			ServerTimeout:     p.getInt("DB_MONGODB_SERVER_TIMEOUT", 30000),
+			HeartbeatInterval: p.getInt("DB_MONGODB_HEARTBEAT_INTERVAL", 10000),
 		},
 	}
 
-	// Load Redis configuration
-	config.Redis = types.RedisConfig{
-		Host:     p.getString("REDIS_HOST", "localhost"),
-		Port:     p.getInt("REDIS_PORT", 6379),
-		Password: p.getString("REDIS_PASSWORD", ""),
-		DB:       p.getInt("REDIS_DB", 0),
-		PoolSize: p.getInt("REDIS_POOL_SIZE", 10),
+	// Load Cache Redis configuration
+	config.Cache = types.CacheConfig{
+		Provider: p.getString("CACHE_PROVIDER", "memory"),
+		Redis: types.RedisConfig{
+			Host:                p.getString("REDIS_HOST", "localhost"),
+			Port:                p.getInt("REDIS_PORT", 6379),
+			Username:            p.getString("REDIS_USERNAME", ""),
+			Password:            p.getString("REDIS_PASSWORD", ""),
+			DB:                  p.getInt("REDIS_DB", 0),
+			PoolSize:            p.getInt("REDIS_POOL_SIZE", 10),
+			MinIdleConns:        p.getInt("REDIS_MIN_IDLE_CONNS", 5),
+			MaxConnAge:          p.getInt("REDIS_MAX_CONN_AGE", 3600),
+			PoolTimeout:         p.getInt("REDIS_POOL_TIMEOUT", 30),
+			IdleTimeout:         p.getInt("REDIS_IDLE_TIMEOUT", 300),
+			DialTimeout:         p.getInt("REDIS_DIAL_TIMEOUT", 30),
+			ReadTimeout:         p.getInt("REDIS_READ_TIMEOUT", 30),
+			WriteTimeout:        p.getInt("REDIS_WRITE_TIMEOUT", 30),
+			MaxRetries:          p.getInt("REDIS_MAX_RETRIES", 3),
+			UseTLS:              p.getBool("REDIS_USE_TLS", false),
+			HealthCheckInterval: p.getInt("REDIS_HEALTH_CHECK_INTERVAL", 30),
+			EnableMetrics:       p.getBool("REDIS_ENABLE_METRICS", false),
+		},
 	}
 
-	// Load Vault configuration
-	config.Vault = types.VaultConfig{
+	// Load Vault configuration into config.Configuration
+	config.Configuration.Vault = types.VaultConfig{
 		Address: p.getString("VAULT_ADDRESS", ""),
 		Token:   p.getString("VAULT_TOKEN", ""),
 		Path:    p.getString("VAULT_PATH", ""),
@@ -75,11 +108,15 @@ func (p *Provider) Load() (*types.Config, error) {
 
 	// Load logging configuration
 	config.Logging = types.LoggingConfig{
-		Level:      p.getString("LOGGING_LEVEL", "info"),
-		Format:     p.getString("LOGGING_FORMAT", "json"),
-		Output:     p.getString("LOGGING_OUTPUT", "stdout"),
-		ElasticURL: p.getString("LOGGING_ELASTIC_URL", ""),
-		Index:      p.getString("LOGGING_INDEX", ""),
+		Level:  p.getString("LOGGING_LEVEL", "info"),
+		Format: p.getString("LOGGING_FORMAT", "json"),
+		Output: p.getString("LOGGING_OUTPUT", "stdout"),
+		Elastic: types.ElasticsearchConfig{
+			URL:      p.getString("LOGGING_ELASTIC_URL", ""),
+			Index:    p.getString("LOGGING_INDEX", ""),
+			Username: p.getString("LOGGING_ELASTIC_USERNAME", ""),
+			Password: p.getString("LOGGING_ELASTIC_PASSWORD", ""),
+		},
 	}
 
 	// Load monitoring configuration
@@ -113,15 +150,7 @@ func (p *Provider) Load() (*types.Config, error) {
 		},
 	}
 
-	// Load search configuration
-	config.Search = types.SearchConfig{
-		Elasticsearch: types.ElasticsearchConfig{
-			URL:      p.getString("SEARCH_ELASTICSEARCH_URL", "http://localhost:9200"),
-			Username: p.getString("SEARCH_ELASTICSEARCH_USERNAME", ""),
-			Password: p.getString("SEARCH_ELASTICSEARCH_PASSWORD", ""),
-			Index:    p.getString("SEARCH_ELASTICSEARCH_INDEX", ""),
-		},
-	}
+	// No separate Search in new config; map to Logging.Elastic if needed
 
 	// Load auth configuration
 	config.Auth = types.AuthConfig{
@@ -134,25 +163,35 @@ func (p *Provider) Load() (*types.Config, error) {
 		},
 	}
 
-	// Load RabbitMQ configuration
-	config.RabbitMQ = types.RabbitMQConfig{
-		URL:      p.getString("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/"),
-		Exchange: p.getString("RABBITMQ_EXCHANGE", ""),
-		Queue:    p.getString("RABBITMQ_QUEUE", ""),
+	// Messaging
+	config.Messaging = types.MessagingConfig{
+		Provider: p.getString("MESSAGING_PROVIDER", "kafka"),
+		Kafka: types.KafkaConfig{
+			Brokers: p.getStringSlice("KAFKA_BROKERS", []string{"localhost:9092"}),
+			Topic:   p.getString("KAFKA_TOPIC", ""),
+			GroupID: p.getString("KAFKA_GROUP_ID", ""),
+		},
+		RabbitMQ: types.RabbitMQConfig{
+			URL:      p.getString("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/"),
+			Exchange: p.getString("RABBITMQ_EXCHANGE", ""),
+			Queue:    p.getString("RABBITMQ_QUEUE", ""),
+		},
 	}
 
-	// Load Kafka configuration
-	config.Kafka = types.KafkaConfig{
-		Brokers: p.getStringSlice("KAFKA_BROKERS", []string{"localhost:9092"}),
-		Topic:   p.getString("KAFKA_TOPIC", ""),
-		GroupID: p.getString("KAFKA_GROUP_ID", ""),
-	}
-
-	// Load gRPC configuration
-	config.GRPC = types.GRPCConfig{
-		Port:    p.getString("GRPC_PORT", "50051"),
-		Host:    p.getString("GRPC_HOST", "0.0.0.0"),
-		Timeout: p.getInt("GRPC_TIMEOUT", 30),
+	// API (HTTP/GRPC)
+	config.API = types.APIConfig{
+		HTTP: types.HTTPServerConfig{
+			Host:         p.getString("SERVER_HOST", "0.0.0.0"),
+			Port:         p.getString("SERVER_PORT", "8080"),
+			BasePath:     p.getString("SERVER_BASE_PATH", "/"),
+			ReadTimeout:  p.getInt("SERVER_READ_TIMEOUT", 30),
+			WriteTimeout: p.getInt("SERVER_WRITE_TIMEOUT", 30),
+		},
+		GRPC: types.GRPCConfig{
+			Host:    p.getString("GRPC_HOST", "0.0.0.0"),
+			Port:    p.getString("GRPC_PORT", "50051"),
+			Timeout: p.getInt("GRPC_TIMEOUT", 30),
+		},
 	}
 
 	// Load services configuration

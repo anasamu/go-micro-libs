@@ -39,19 +39,23 @@ import (
 
     "github.com/anasamu/go-micro-libs/config"
     "github.com/anasamu/go-micro-libs/config/types"
+    file "github.com/anasamu/go-micro-libs/config/providers/file"
 )
 
 func main() {
     // Create configuration manager
     manager := config.NewManager()
 
-    // Register file provider (example)
-    // fileProvider := file.NewFileProvider("config.yaml")
-    // manager.RegisterProvider("file", fileProvider)
+    // Register file provider
+    fileProvider := file.NewProvider("config.yaml", "yaml")
+    manager.RegisterProvider("file", fileProvider)
+
+    // (Optional) You can also register other providers and switch between them later
+    // envProvider := env.NewProvider("")
+    // manager.RegisterProvider("env", envProvider)
 
     // Set current provider
-    err := manager.SetCurrentProvider("file")
-    if err != nil {
+    if err := manager.SetCurrentProvider("file"); err != nil {
         log.Fatal(err)
     }
 
@@ -62,9 +66,11 @@ func main() {
     }
 
     // Use configuration
-    fmt.Printf("Server running on %s:%s\n", cfg.Server.Host, cfg.Server.Port)
+    fmt.Printf("Server running on %s:%s\n", cfg.API.HTTP.Host, cfg.API.HTTP.Port)
     fmt.Printf("Database URL: %s\n", cfg.GetDatabaseURL())
     fmt.Printf("Environment: %s\n", cfg.Server.Environment)
+
+    _ = types.Config{} // imported for reference in examples below
 }
 ```
 
@@ -77,118 +83,160 @@ The main manager for handling configuration operations across multiple providers
 #### Methods
 
 ##### `NewManager() *Manager`
+
 Creates a new configuration manager.
 
 ##### `RegisterProvider(name string, provider ConfigProvider)`
+
 Registers a configuration provider.
 
 **Parameters:**
+
 - `name`: Name of the provider
 - `provider`: The configuration provider to register
 
 ##### `SetCurrentProvider(name string) error`
+
 Sets the current active provider.
 
 **Parameters:**
+
 - `name`: Name of the provider to set as current
 
 **Returns:**
+
 - `error`: Any error that occurred
 
 ##### `Load() (*Config, error)`
+
 Loads configuration from the current provider.
 
 **Returns:**
+
 - `*Config`: Loaded configuration
 - `error`: Any error that occurred
 
 ##### `Save(config *Config) error`
+
 Saves configuration to the current provider.
 
 **Parameters:**
+
 - `config`: Configuration to save
 
 **Returns:**
+
 - `error`: Any error that occurred
 
 ##### `GetConfig() *Config`
+
 Returns the current configuration.
 
 ##### `Watch(callback func(*Config)) error`
+
 Starts watching for configuration changes.
 
 **Parameters:**
+
 - `callback`: Function to call when configuration changes
 
 **Returns:**
+
 - `error`: Any error that occurred
 
 ##### `Reload() (*Config, error)`
+
 Reloads configuration from the current provider.
 
 ##### `UpdateConfig(updater func(*Config)) error`
+
 Updates the current configuration and saves it.
 
 ##### `Close() error`
+
 Closes all configuration providers.
 
 ##### `GetProvider(name string) (ConfigProvider, error)`
+
 Returns a specific provider by name.
 
 ##### `ListProviders() []string`
+
 Returns a list of all registered provider names.
 
 ### Types
 
 #### Config
+
 Holds all configuration for the application.
 
 ```go
 type Config struct {
-    Server     ServerConfig           `mapstructure:"server"`
-    Database   DatabaseConfig         `mapstructure:"database"`
-    Redis      RedisConfig            `mapstructure:"redis"`
-    Vault      VaultConfig            `mapstructure:"vault"`
-    Logging    LoggingConfig          `mapstructure:"logging"`
-    Monitoring MonitoringConfig       `mapstructure:"monitoring"`
-    Storage    StorageConfig          `mapstructure:"storage"`
-    Search     SearchConfig           `mapstructure:"search"`
-    Auth       AuthConfig             `mapstructure:"auth"`
-    RabbitMQ   RabbitMQConfig         `mapstructure:"rabbitmq"`
-    Kafka      KafkaConfig            `mapstructure:"kafka"`
-    GRPC       GRPCConfig             `mapstructure:"grpc"`
-    Services   ServicesConfig         `mapstructure:"services"`
-    Custom     map[string]interface{} `mapstructure:",remain"`
+    Server         ServerConfig            `mapstructure:"server"`
+    Database       DatabaseConfig          `mapstructure:"database"`
+    Configuration  ConfigurationConfig     `mapstructure:"config"`
+    Logging        LoggingConfig           `mapstructure:"logging"`
+    Monitoring     MonitoringConfig        `mapstructure:"monitoring"`
+    Storage        StorageConfig           `mapstructure:"storage"`
+    Auth           AuthConfig              `mapstructure:"auth"`
+    API            APIConfig               `mapstructure:"api"`
+    Communication  CommunicationConfig     `mapstructure:"communication"`
+    Cache          CacheConfig             `mapstructure:"cache"`
+    Messaging      MessagingConfig         `mapstructure:"messaging"`
+    Email          EmailConfig             `mapstructure:"email"`
+    Payment        PaymentConfig           `mapstructure:"payment"`
+    Discovery      DiscoveryConfig         `mapstructure:"discovery"`
+    Failover       FailoverConfig          `mapstructure:"failover"`
+    Edge           EdgeConfig              `mapstructure:"edge"`
+    CircuitBreaker CircuitBreakerLibConfig `mapstructure:"circuitbreaker"`
+    Event          EventConfig             `mapstructure:"event"`
+    RateLimit      RateLimitConfig         `mapstructure:"ratelimit"`
+    Scheduling     SchedulingConfig        `mapstructure:"scheduling"`
+    ZeroTrust      ZeroTrustConfig         `mapstructure:"zerotrust"`
+    Backup         BackupConfig            `mapstructure:"backup"`
+    Chaos          ChaosConfig             `mapstructure:"chaos"`
+    AI             AIConfig                `mapstructure:"ai"`
+    Middleware     MiddlewareConfig        `mapstructure:"middleware"`
+    FileGen        FileGenConfig           `mapstructure:"filegen"`
+    Services       ServicesConfig          `mapstructure:"services"`
+    Custom         map[string]interface{}  `mapstructure:",remain"`
 }
 ```
 
 #### ServerConfig
-Holds server configuration.
+
+Core service metadata. Note: HTTP/gRPC host and port are under `API.HTTP` and `API.GRPC`.
 
 ```go
 type ServerConfig struct {
-    Port         string `mapstructure:"port"`
-    Host         string `mapstructure:"host"`
-    Environment  string `mapstructure:"environment"`
-    ServiceName  string `mapstructure:"service_name"`
-    Version      string `mapstructure:"version"`
-    ReadTimeout  int    `mapstructure:"read_timeout"`
-    WriteTimeout int    `mapstructure:"write_timeout"`
-    IdleTimeout  int    `mapstructure:"idle_timeout"`
+    ServiceName   string              `mapstructure:"service_name"`
+    Version       string              `mapstructure:"version"`
+    Environment   string              `mapstructure:"environment"`
+    Configuration ConfigurationConfig `mapstructure:"config"`
 }
 ```
 
 #### DatabaseConfig
+
 Holds database configuration.
 
 ```go
 type DatabaseConfig struct {
-    PostgreSQL PostgreSQLConfig `mapstructure:"postgresql"`
-    MongoDB    MongoDBConfig    `mapstructure:"mongodb"`
+    PostgreSQL  PostgreSQLConfig `mapstructure:"postgresql"`
+    MongoDB     MongoDBConfig    `mapstructure:"mongodb"`
+    MySQL       MySQLConfig      `mapstructure:"mysql"`
+    MariaDB     MariaDBConfig    `mapstructure:"mariadb"`
+    SQLite      SQLiteConfig     `mapstructure:"sqlite"`
+    Cassandra   CassandraConfig  `mapstructure:"cassandra"`
+    CockroachDB CockroachConfig  `mapstructure:"cockroachdb"`
+    Redis       RedisDBConfig    `mapstructure:"redis"`
+    InfluxDB    InfluxDBConfig   `mapstructure:"influxdb"`
+    Elastic     ElasticDBConfig  `mapstructure:"elasticsearch"`
 }
 ```
 
 #### ServiceConfig
+
 Holds individual service configuration.
 
 ```go
@@ -218,16 +266,15 @@ type ServiceConfig struct {
 manager := config.NewManager()
 
 // Register file provider
-fileProvider := file.NewFileProvider("config.yaml")
+fileProvider := file.NewProvider("config.yaml", "yaml")
 manager.RegisterProvider("file", fileProvider)
 
 // Register environment provider
-envProvider := env.NewEnvProvider()
-manager.RegisterProvider("env", envProvider)
+// envProvider := env.NewProvider("")
+// manager.RegisterProvider("env", envProvider)
 
 // Set current provider
-err := manager.SetCurrentProvider("file")
-if err != nil {
+if err := manager.SetCurrentProvider("file"); err != nil {
     log.Fatal(err)
 }
 
@@ -238,7 +285,7 @@ if err != nil {
 }
 
 // Use configuration
-fmt.Printf("Server: %s:%s\n", cfg.Server.Host, cfg.Server.Port)
+fmt.Printf("Server: %s:%s\n", cfg.API.HTTP.Host, cfg.API.HTTP.Port)
 fmt.Printf("Database: %s\n", cfg.GetDatabaseURL())
 fmt.Printf("Redis: %s\n", cfg.GetRedisURL())
 ```
@@ -388,15 +435,15 @@ if cfg.IsDevelopment() {
 ```go
 // Update configuration
 err := manager.UpdateConfig(func(config *types.Config) {
-    // Update server configuration
-    config.Server.Port = "8080"
-    config.Server.ReadTimeout = 30
-    config.Server.WriteTimeout = 30
-    
+    // Update API server configuration
+    config.API.HTTP.Port = "8080"
+    config.API.HTTP.ReadTimeout = 30
+    config.API.HTTP.WriteTimeout = 30
+
     // Update database configuration
-    config.Database.PostgreSQL.MaxConns = 100
-    config.Database.PostgreSQL.MinConns = 10
-    
+    config.Database.PostgreSQL.MaxOpenConns = 100
+    config.Database.PostgreSQL.MinOpenConns = 10
+
     // Add custom configuration
     config.SetCustomValue("maintenance_mode", false)
     config.SetCustomValue("max_workers", 10)
@@ -498,43 +545,96 @@ cfg.SetServiceConfig("payment_service", serviceConfig)
 ```go
 // Validate configuration
 func validateConfig(cfg *types.Config) error {
-    // Validate server configuration
-    if cfg.Server.Port == "" {
-        return fmt.Errorf("server port is required")
+    // Validate API server configuration
+    if cfg.API.HTTP.Port == "" {
+        return fmt.Errorf("api.http.port is required")
     }
-    
-    if cfg.Server.Host == "" {
-        return fmt.Errorf("server host is required")
+
+    if cfg.API.HTTP.Host == "" {
+        return fmt.Errorf("api.http.host is required")
     }
-    
+
     // Validate database configuration
     if cfg.Database.PostgreSQL.Host == "" {
         return fmt.Errorf("database host is required")
     }
-    
+
     if cfg.Database.PostgreSQL.Port == 0 {
         return fmt.Errorf("database port is required")
     }
-    
+
     // Validate service configurations
     services := cfg.GetAllServices()
     for name, service := range services {
         if service.Host == "" {
             return fmt.Errorf("service %s host is required", name)
         }
-        
+
         if service.Port == "" {
             return fmt.Errorf("service %s port is required", name)
         }
     }
-    
+
     return nil
 }
 
 // Validate loaded configuration
-err = validateConfig(cfg)
-if err != nil {
+if err := validateConfig(cfg); err != nil {
     log.Fatalf("Configuration validation failed: %v", err)
+}
+```
+
+### Helpers and integrations
+
+The package provides helpers to map central config to other managers and logging.
+
+```go
+// Build a logrus.Logger from config
+logger := config.BuildLogrusFromConfig(cfg)
+
+// Get a logx facade bound to logrus
+lx := config.BuildLoggerFacade(cfg)
+
+// Build manager configs
+apiCfg := config.BuildAPIManagerConfig(cfg)
+dbCfg := config.BuildDatabaseManagerConfig(cfg)
+msgCfg := config.BuildMessagingManagerConfig(cfg)
+cbCfg := config.BuildCircuitBreakerManagerConfig(cfg)
+cacheCfg := config.BuildCacheManagerConfig(cfg)
+
+// Connection helpers
+redisURL := config.GetRedisConnectionURL(cfg)
+pgURL := config.GetDatabaseConnectionURL(cfg, "postgresql")
+serviceURL, _ := config.GetServiceEndpoint(cfg, "user_service")
+
+_ = []interface{}{logger, lx, apiCfg, dbCfg, msgCfg, cbCfg, cacheCfg, redisURL, pgURL, serviceURL}
+```
+
+### Running communication servers from service configs
+
+You can map a `types.ServiceConfig` to a communication provider and start it with the correct host/port/timeouts using the helper below.
+
+```go
+import (
+    "context"
+    "log"
+    comm "github.com/anasamu/go-micro-libs/communication"
+    httpProv "github.com/anasamu/go-micro-libs/communication/providers/http"
+    grpcProv "github.com/anasamu/go-micro-libs/communication/providers/grpc"
+)
+
+providerName, startCfg, err := config.BuildCommunicationStartConfigForService(cfg, "user_service")
+if err != nil { log.Fatal(err) }
+
+cm := comm.NewCommunicationManager(nil, logger)
+_ = cm.RegisterProvider(httpProv.NewProvider(logger))
+_ = cm.RegisterProvider(grpcProv.NewProvider(logger))
+
+// Optionally configure providers with the same startCfg
+if p, _ := cm.GetProvider(providerName); p != nil { _ = p.Configure(startCfg) }
+
+if err := cm.Start(context.Background(), providerName, startCfg); err != nil {
+    log.Fatal(err)
 }
 ```
 

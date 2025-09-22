@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	apperrors "github.com/anasamu/go-micro-libs/errors"
 	"github.com/anasamu/go-micro-libs/logging/types"
 	"github.com/sirupsen/logrus"
 )
@@ -47,16 +48,16 @@ func NewLoggingManager(config *ManagerConfig, logger *logrus.Logger) *LoggingMan
 // RegisterProvider registers a logging provider
 func (lm *LoggingManager) RegisterProvider(provider types.LoggingProvider) error {
 	if provider == nil {
-		return fmt.Errorf("provider cannot be nil")
+		return apperrors.New(apperrors.CodeInvalidInput, "provider cannot be nil")
 	}
 
 	name := provider.GetName()
 	if name == "" {
-		return fmt.Errorf("provider name cannot be empty")
+		return apperrors.New(apperrors.CodeInvalidInput, "provider name cannot be empty")
 	}
 
 	if _, exists := lm.providers[name]; exists {
-		return fmt.Errorf("provider %s already registered", name)
+		return apperrors.Conflict(fmt.Sprintf("provider %s already registered", name), nil)
 	}
 
 	lm.providers[name] = provider
@@ -69,7 +70,7 @@ func (lm *LoggingManager) RegisterProvider(provider types.LoggingProvider) error
 func (lm *LoggingManager) GetProvider(name string) (types.LoggingProvider, error) {
 	provider, exists := lm.providers[name]
 	if !exists {
-		return nil, fmt.Errorf("provider %s not found", name)
+		return nil, apperrors.New(apperrors.CodeNotFound, fmt.Sprintf("provider %s not found", name))
 	}
 	return provider, nil
 }
@@ -81,7 +82,7 @@ func (lm *LoggingManager) GetDefaultProvider() (types.LoggingProvider, error) {
 		for _, provider := range lm.providers {
 			return provider, nil
 		}
-		return nil, fmt.Errorf("no providers registered")
+		return nil, apperrors.New(apperrors.CodeNotFound, "no providers registered")
 	}
 
 	return lm.GetProvider(lm.config.DefaultProvider)
@@ -424,7 +425,7 @@ func (lm *LoggingManager) executeWithRetry(ctx context.Context, fn func() error)
 		return nil
 	}
 
-	return fmt.Errorf("operation failed after %d attempts: %w", lm.config.RetryAttempts+1, lastErr)
+	return apperrors.Dependency(fmt.Sprintf("operation failed after %d attempts", lm.config.RetryAttempts+1), lastErr)
 }
 
 // ListProviders returns a list of registered provider names

@@ -1,12 +1,22 @@
 package utils
 
 import (
+	"bytes"
+	"compress/gzip"
+	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
 	"math/big"
+	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -497,6 +507,11 @@ var (
 	TimeUtilsInstance       = NewTimeUtils()
 	UUIDUtilsInstance       = NewUUIDUtils()
 	FileUtilsInstance       = NewFileUtils()
+	RetryUtilsInstance      = NewRetryUtils()
+	ContextUtilsInstance    = NewContextUtils()
+	EnvUtilsInstance        = NewEnvUtils()
+	DataUtilsInstance       = NewDataUtils()
+	SliceUtilsInstance      = NewSliceUtils()
 )
 
 // Convenience functions
@@ -555,3 +570,414 @@ func GenerateUUID() uuid.UUID {
 func GenerateUUIDString() string {
 	return UUIDUtilsInstance.GenerateString()
 }
+
+// --------------------
+// Retry utilities
+// --------------------
+
+// RetryUtils provides retry with backoff helpers
+type RetryUtils struct{}
+
+// NewRetryUtils creates a new RetryUtils instance
+func NewRetryUtils() *RetryUtils { return &RetryUtils{} }
+
+// Retry executes fn up to attempts with exponential backoff and jitter, honoring ctx cancellation
+func (ru *RetryUtils) Retry(ctx context.Context, attempts int, initialBackoff, maxBackoff time.Duration, fn func() error) error {
+	if attempts <= 0 {
+		return fmt.Errorf("attempts must be > 0")
+	}
+	if initialBackoff <= 0 {
+		initialBackoff = 50 * time.Millisecond
+	}
+	if maxBackoff <= 0 {
+		maxBackoff = 5 * time.Second
+	}
+	var lastErr error
+	backoff := initialBackoff
+	for i := 0; i < attempts; i++ {
+		if err := fn(); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+		if i == attempts-1 {
+			break
+		}
+		// jitter up to 50% of current backoff
+		jitter := ru.jitterDuration(backoff / 2)
+		delay := backoff + jitter
+		if delay > maxBackoff {
+			delay = maxBackoff
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+		// Exponential increase with cap
+		backoff *= 2
+		if backoff > maxBackoff {
+			backoff = maxBackoff
+		}
+	}
+	return lastErr
+}
+
+// RetryWithResult executes fn with retries and returns its result
+func RetryWithResult[T any](ctx context.Context, attempts int, initialBackoff, maxBackoff time.Duration, fn func() (T, error)) (T, error) {
+	var zero T
+	if attempts <= 0 {
+		return zero, fmt.Errorf("attempts must be > 0")
+	}
+	if initialBackoff <= 0 {
+		initialBackoff = 50 * time.Millisecond
+	}
+	if maxBackoff <= 0 {
+		maxBackoff = 5 * time.Second
+	}
+	var lastErr error
+	backoff := initialBackoff
+	for i := 0; i < attempts; i++ {
+		if res, err := fn(); err == nil {
+			return res, nil
+		} else {
+			lastErr = err
+		}
+		if i == attempts-1 {
+			break
+		}
+		jitter := RetryUtilsInstance.jitterDuration(backoff / 2)
+		delay := backoff + jitter
+		if delay > maxBackoff {
+			delay = maxBackoff
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return zero, ctx.Err()
+		case <-timer.C:
+		}
+		backoff *= 2
+		if backoff > maxBackoff {
+			backoff = maxBackoff
+		}
+	}
+	return zero, lastErr
+}
+
+func (ru *RetryUtils) jitterDuration(max time.Duration) time.Duration {
+	if max <= 0 {
+		return 0
+	}
+	// Use crypto/rand to avoid global state
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	if err != nil {
+		return 0
+	}
+	return time.Duration(n.Int64())
+}
+
+// Convenience wrappers
+func Retry(ctx context.Context, attempts int, initialBackoff, maxBackoff time.Duration, fn func() error) error {
+	return RetryUtilsInstance.Retry(ctx, attempts, initialBackoff, maxBackoff, fn)
+}
+
+// (function implemented above)
+
+// --------------------
+// Context utilities
+// --------------------
+
+// ContextUtils provides helpers for common IDs in context
+type ContextUtils struct{}
+
+// NewContextUtils creates a new ContextUtils instance
+func NewContextUtils() *ContextUtils { return &ContextUtils{} }
+
+type ctxKey string
+
+const (
+	ctxKeyRequestID     ctxKey = "request_id"
+	ctxKeyCorrelationID ctxKey = "correlation_id"
+)
+
+// WithRequestID attaches a request ID to context
+func (cu *ContextUtils) WithRequestID(ctx context.Context, requestID string) context.Context {
+	if requestID == "" {
+		requestID = uuid.NewString()
+	}
+	return context.WithValue(ctx, ctxKeyRequestID, requestID)
+}
+
+// RequestID gets a request ID from context, empty if missing
+func (cu *ContextUtils) RequestID(ctx context.Context) string {
+	if v := ctx.Value(ctxKeyRequestID); v != nil {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+// EnsureRequestID returns a context with request ID set and the ID value
+func (cu *ContextUtils) EnsureRequestID(ctx context.Context) (context.Context, string) {
+	if id := cu.RequestID(ctx); id != "" {
+		return ctx, id
+	}
+	id := uuid.NewString()
+	return context.WithValue(ctx, ctxKeyRequestID, id), id
+}
+
+// WithCorrelationID attaches a correlation ID to context
+func (cu *ContextUtils) WithCorrelationID(ctx context.Context, correlationID string) context.Context {
+	if correlationID == "" {
+		correlationID = uuid.NewString()
+	}
+	return context.WithValue(ctx, ctxKeyCorrelationID, correlationID)
+}
+
+// CorrelationID gets a correlation ID from context
+func (cu *ContextUtils) CorrelationID(ctx context.Context) string {
+	if v := ctx.Value(ctxKeyCorrelationID); v != nil {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+// EnsureCorrelationID returns a context with correlation ID set and the ID value
+func (cu *ContextUtils) EnsureCorrelationID(ctx context.Context) (context.Context, string) {
+	if id := cu.CorrelationID(ctx); id != "" {
+		return ctx, id
+	}
+	id := uuid.NewString()
+	return context.WithValue(ctx, ctxKeyCorrelationID, id), id
+}
+
+// Convenience wrappers
+func WithRequestID(ctx context.Context, requestID string) context.Context {
+	return ContextUtilsInstance.WithRequestID(ctx, requestID)
+}
+
+func RequestID(ctx context.Context) string { return ContextUtilsInstance.RequestID(ctx) }
+
+func EnsureRequestID(ctx context.Context) (context.Context, string) {
+	return ContextUtilsInstance.EnsureRequestID(ctx)
+}
+
+func WithCorrelationID(ctx context.Context, correlationID string) context.Context {
+	return ContextUtilsInstance.WithCorrelationID(ctx, correlationID)
+}
+
+func CorrelationID(ctx context.Context) string { return ContextUtilsInstance.CorrelationID(ctx) }
+
+func EnsureCorrelationID(ctx context.Context) (context.Context, string) {
+	return ContextUtilsInstance.EnsureCorrelationID(ctx)
+}
+
+// --------------------
+// Environment utilities
+// --------------------
+
+// EnvUtils provides environment variable helpers
+type EnvUtils struct{}
+
+// NewEnvUtils creates a new EnvUtils instance
+func NewEnvUtils() *EnvUtils { return &EnvUtils{} }
+
+func (eu *EnvUtils) GetString(key, def string) string {
+	if v, ok := os.LookupEnv(key); ok {
+		return v
+	}
+	return def
+}
+
+func (eu *EnvUtils) GetInt(key string, def int) int {
+	if v, ok := os.LookupEnv(key); ok {
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			return n
+		}
+	}
+	return def
+}
+
+func (eu *EnvUtils) GetBool(key string, def bool) bool {
+	if v, ok := os.LookupEnv(key); ok {
+		if b, err := strconv.ParseBool(strings.TrimSpace(v)); err == nil {
+			return b
+		}
+	}
+	return def
+}
+
+func (eu *EnvUtils) GetDuration(key string, def time.Duration) time.Duration {
+	if v, ok := os.LookupEnv(key); ok {
+		if d, err := time.ParseDuration(strings.TrimSpace(v)); err == nil {
+			return d
+		}
+	}
+	return def
+}
+
+// Convenience wrappers
+func GetEnvString(key, def string) string  { return EnvUtilsInstance.GetString(key, def) }
+func GetEnvInt(key string, def int) int    { return EnvUtilsInstance.GetInt(key, def) }
+func GetEnvBool(key string, def bool) bool { return EnvUtilsInstance.GetBool(key, def) }
+func GetEnvDuration(key string, def time.Duration) time.Duration {
+	return EnvUtilsInstance.GetDuration(key, def)
+}
+
+// --------------------
+// Data utilities (JSON/Base64/Gzip)
+// --------------------
+
+// DataUtils provides encoding/decoding helpers
+type DataUtils struct{}
+
+// NewDataUtils creates a new DataUtils instance
+func NewDataUtils() *DataUtils { return &DataUtils{} }
+
+func (du *DataUtils) JSONEncode(v any) ([]byte, error) {
+	return json.Marshal(v)
+}
+
+func (du *DataUtils) JSONDecode(data []byte, v any) error {
+	return json.Unmarshal(data, v)
+}
+
+func (du *DataUtils) JSONPretty(v any) (string, error) {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+func (du *DataUtils) Base64URLEncode(data []byte) string {
+	return base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(data)
+}
+
+func (du *DataUtils) Base64URLDecode(s string) ([]byte, error) {
+	return base64.URLEncoding.WithPadding(base64.NoPadding).DecodeString(s)
+}
+
+func (du *DataUtils) GzipCompress(data []byte) ([]byte, error) {
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	if _, err := gw.Write(data); err != nil {
+		gw.Close()
+		return nil, err
+	}
+	if err := gw.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func (du *DataUtils) GzipDecompress(data []byte) ([]byte, error) {
+	gr, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	defer gr.Close()
+	var out bytes.Buffer
+	if _, err := io.Copy(&out, gr); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
+}
+
+// Convenience wrappers
+func JSONEncode(v any) ([]byte, error)           { return DataUtilsInstance.JSONEncode(v) }
+func JSONDecode(data []byte, v any) error        { return DataUtilsInstance.JSONDecode(data, v) }
+func JSONPretty(v any) (string, error)           { return DataUtilsInstance.JSONPretty(v) }
+func Base64URLEncode(data []byte) string         { return DataUtilsInstance.Base64URLEncode(data) }
+func Base64URLDecode(s string) ([]byte, error)   { return DataUtilsInstance.Base64URLDecode(s) }
+func GzipCompress(data []byte) ([]byte, error)   { return DataUtilsInstance.GzipCompress(data) }
+func GzipDecompress(data []byte) ([]byte, error) { return DataUtilsInstance.GzipDecompress(data) }
+
+// --------------------
+// Crypto extensions
+// --------------------
+
+// HMACSHA256 returns HMAC-SHA256 bytes of message with secret key
+func (cu *CryptoUtils) HMACSHA256(message, secret []byte) []byte {
+	mac := hmac.New(sha256.New, secret)
+	mac.Write(message)
+	return mac.Sum(nil)
+}
+
+// HMACSHA256Hex returns lowercase hex HMAC of message with secret string
+func (cu *CryptoUtils) HMACSHA256Hex(message, secret string) string {
+	sum := cu.HMACSHA256([]byte(message), []byte(secret))
+	return hex.EncodeToString(sum)
+}
+
+// ConstantTimeCompare compares two byte slices in constant time
+func (cu *CryptoUtils) ConstantTimeCompare(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	return subtle.ConstantTimeCompare(a, b) == 1
+}
+
+// RandomHex returns hex string of n random bytes
+func (cu *CryptoUtils) RandomHex(n int) (string, error) {
+	b, err := cu.GenerateRandomBytes(n)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// Convenience wrappers
+func HMACSHA256(message, secret []byte) []byte {
+	return CryptoUtilsInstance.HMACSHA256(message, secret)
+}
+func HMACSHA256Hex(message, secret string) string {
+	return CryptoUtilsInstance.HMACSHA256Hex(message, secret)
+}
+func ConstantTimeCompare(a, b []byte) bool { return CryptoUtilsInstance.ConstantTimeCompare(a, b) }
+func RandomHex(n int) (string, error)      { return CryptoUtilsInstance.RandomHex(n) }
+
+// --------------------
+// Slice utilities
+// --------------------
+
+// SliceUtils provides slice helpers
+type SliceUtils struct{}
+
+// NewSliceUtils creates a new SliceUtils instance
+func NewSliceUtils() *SliceUtils { return &SliceUtils{} }
+
+func (su2 *SliceUtils) ContainsString(items []string, target string) bool {
+	for _, v := range items {
+		if v == target {
+			return true
+		}
+	}
+	return false
+}
+
+func (su2 *SliceUtils) UniqueStrings(items []string) []string {
+	seen := make(map[string]struct{}, len(items))
+	out := make([]string, 0, len(items))
+	for _, v := range items {
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
+}
+
+// Convenience wrappers
+func ContainsString(items []string, target string) bool {
+	return SliceUtilsInstance.ContainsString(items, target)
+}
+func UniqueStrings(items []string) []string { return SliceUtilsInstance.UniqueStrings(items) }
